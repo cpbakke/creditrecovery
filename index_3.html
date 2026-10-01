@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Credit Recovery Dashboard (Prototype, synthetic data)</title>
+<style>
+/* APS brand colors: PLACEHOLDERS until official hex codes arrive. Swap these three. */
+:root{
+  --aps-purple:#4B2E83;
+  --aps-orange:#F2A900;
+  --aps-teal:#00877C;
+
+  --st-rec:#00877C;      /* Recovered (teal) */
+  --st-ip:#8CCBC4;       /* In progress (light teal) */
+  --st-part:#F6D27F;     /* Partial credit (light orange) */
+  --st-ns:#E08A00;       /* Not scheduled (orange) */
+  --neutral:#BAB0AC;
+
+  --page:#E9E9EB; --canvas:#FFFFFF; --text:#2B2B2B; --muted:#5F5F66;
+  --grid:#E3E3E6; --grid-strong:#C4C4CA; --hdr:#F4F4F6; --band:#FAFAFB; --hover:#EEEAF6; --tab:#DADADE;
+  --font:"Tableau Book","Benton Sans","Segoe UI","Helvetica Neue",Helvetica,sans-serif;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --page:#1C1C1F; --canvas:#26262A; --text:#ECECEE; --muted:#A9A9B2;
+    --grid:#3A3A40; --grid-strong:#55555D; --hdr:#2F2F34; --band:#2A2A2E; --hover:#3A3348; --tab:#34343A;
+  }
+}
+:root[data-theme="dark"]{
+  --page:#1C1C1F; --canvas:#26262A; --text:#ECECEE; --muted:#A9A9B2;
+  --grid:#3A3A40; --grid-strong:#55555D; --hdr:#2F2F34; --band:#2A2A2E; --hover:#3A3348; --tab:#34343A;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--page);color:var(--text);font:13px/1.35 var(--font)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--aps-orange);outline-offset:1px}
+
+.proto{background:#FCE9B8;color:#3A2A00;padding:6px 16px;font-size:12px}
+.server{display:flex;align-items:center;gap:14px;padding:8px 16px;background:var(--canvas);border-bottom:1px solid var(--grid);flex-wrap:wrap}
+.server .wb{font-weight:600}
+.server .crumb{color:var(--muted);font-size:12px}
+.tabs{display:flex;gap:2px;padding:8px 16px 0;overflow-x:auto}
+.tab{border:1px solid var(--grid-strong);border-bottom:none;background:var(--tab);padding:7px 14px;cursor:pointer;border-radius:3px 3px 0 0;white-space:nowrap}
+.tab[aria-selected="true"]{background:var(--canvas);font-weight:600;box-shadow:inset 0 3px 0 var(--aps-purple)}
+.stage{overflow-x:auto;padding:0 16px 24px}
+.dash{width:1366px;min-height:768px;background:var(--canvas);border:1px solid var(--grid-strong);position:relative}
+.banner{display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--aps-purple);color:#fff;padding:0 16px;height:56px}
+.banner h1{font-size:18px;margin:0;font-weight:600}
+.banner .sub{font-size:12px;opacity:.92;margin-top:2px}
+.banner .right{display:flex;align-items:center;gap:10px}
+.bbtn{background:transparent;border:1px solid rgba(255,255,255,.7);color:#fff;padding:5px 11px;border-radius:3px;cursor:pointer}
+.bbtn.reset{background:var(--aps-orange);border-color:var(--aps-orange);color:#2A1D00;font-weight:600}
+.body{display:flex;align-items:stretch}
+.main{flex:1;min-width:0;padding:10px 16px 16px}
+.pane{width:232px;flex:none;border-left:1px solid var(--grid);padding:12px 12px 16px}
+
+.ws-title{font-weight:600;font-size:13px;margin:14px 0 6px;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.ws-title .note{font-weight:400;color:var(--muted);font-size:11.5px}
+.ws-title:first-child{margin-top:4px}
+.cols{display:grid;gap:16px}
+
+.bans{display:grid;border:1px solid var(--grid)}
+.ban{padding:10px 14px;border-right:1px solid var(--grid);min-width:0}
+.ban:last-child{border-right:none}
+.ban .l{font-size:12px;color:var(--muted);min-height:32px}
+.ban .v{font-size:30px;font-weight:600;color:var(--aps-purple);line-height:1.15;font-variant-numeric:tabular-nums}
+.ban .v.ph{color:var(--neutral)}
+.ban .s{font-size:11.5px;color:var(--muted)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .ban .v{color:#C9B8EC}}
+:root[data-theme="dark"] .ban .v{color:#C9B8EC}
+
+.scroll{overflow:auto;border:1px solid var(--grid)}
+.tbl{border-collapse:separate;border-spacing:0;width:100%;font-size:12px}
+.tbl th{font-weight:600;text-align:left;padding:5px 6px;border-bottom:1px solid var(--grid-strong);background:var(--hdr);position:sticky;top:0;z-index:1;vertical-align:bottom;white-space:normal;line-height:1.2}
+.tbl th.num{text-align:right}
+.tbl th.sortable{cursor:pointer}
+.tbl th .arr{color:var(--muted);font-weight:400;margin-left:3px}
+.tbl td{padding:4px 6px;border-bottom:1px solid var(--grid);white-space:nowrap}
+.tbl tbody tr:nth-child(even) td{background:var(--band)}
+.tbl tr.click{cursor:pointer}
+.tbl tr.click:hover td{background:var(--hover)}
+.tbl tr.total td{font-weight:600;border-top:1px solid var(--grid-strong);background:var(--hdr)}
+.tbl td.cell{cursor:pointer;text-align:right}
+.tbl td.cell.sel{outline:2px solid var(--aps-purple);outline-offset:-2px}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.mut{color:var(--muted)}
+.ph{color:var(--neutral);font-style:italic}
+.sq{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px}
+.warn{color:#9A5B00;font-weight:600}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .warn{color:#F5B94A}}
+:root[data-theme="dark"] .warn{color:#F5B94A}
+
+.bars{border:1px solid var(--grid);padding:6px 10px}
+.brow{display:grid;grid-template-columns:150px 1fr 60px;align-items:center;gap:8px;min-height:22px}
+.brow .lab{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stack{display:flex;height:16px;background:var(--hdr)}
+.seg{height:100%;font-size:10.5px;display:flex;align-items:center;justify-content:center;overflow:hidden;white-space:nowrap}
+.hbar{height:14px;background:var(--aps-purple)}
+.axis{display:grid;grid-template-columns:150px 1fr 60px;gap:8px;font-size:10.5px;color:var(--muted);margin-top:2px}
+.axis .ticks{display:flex;justify-content:space-between}
+
+.fcard{margin-bottom:12px}
+.ftitle{display:block;font-weight:600;font-size:12px;margin-bottom:3px}
+.fcard select{width:100%;padding:4px;border:1px solid var(--grid-strong);background:var(--canvas);border-radius:2px}
+.fcard .opt{display:flex;align-items:center;gap:6px;font-size:12px;padding:1px 0}
+.fcard .opt input{margin:0}
+.pane hr{border:none;border-top:1px solid var(--grid);margin:12px 0}
+.legend .row{display:flex;align-items:center;font-size:12px;padding:2px 0}
+.pnote{font-size:11.5px;color:var(--muted)}
+
+.tip,.menu{position:fixed;z-index:60;background:var(--canvas);color:var(--text);border:1px solid var(--grid-strong);box-shadow:0 2px 8px rgba(0,0,0,.2);padding:8px 10px;font-size:12px;max-width:360px}
+.tip{pointer-events:none;display:none}
+.tip .ln,.menu .ln{padding:1px 0}
+.tip .ln span,.menu .ln span{color:var(--muted)}
+.menu{display:none}
+.menu .acts{border-top:1px solid var(--grid);margin-top:6px;padding-top:6px;display:flex;flex-direction:column;gap:3px}
+.menu .acts button{background:none;border:none;padding:2px 0;text-align:left;color:#2F5FAD;text-decoration:underline;cursor:pointer}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .menu .acts button{color:#8EB4F0}}
+:root[data-theme="dark"] .menu .acts button{color:#8EB4F0}
+
+.info{position:absolute;top:62px;right:244px;width:700px;background:var(--canvas);border:1px solid var(--grid-strong);box-shadow:0 4px 14px rgba(0,0,0,.22);padding:14px 16px;z-index:30;display:grid;grid-template-columns:1fr 1fr;gap:18px;font-size:12.5px}
+.info h2{font-size:13px;margin:0 0 6px}
+.info p,.info li{margin:0 0 6px}
+.info ul{padding-left:16px;margin:0}
+.info .close{position:absolute;top:6px;right:8px;background:none;border:none;font-size:16px;cursor:pointer;color:var(--muted)}
+.empty{padding:18px;color:var(--muted);text-align:center}
+.cap{font-size:11.5px;color:var(--muted);margin-top:4px}
+</style>
+</head>
+<body>
+<div class="proto">Prototype. Every student, counselor and teacher here is invented. School totals are calibrated to discovery counts from 10/1/2026.</div>
+<div class="server">
+  <span class="wb">Credit Recovery (High Schools)</span>
+  <span class="crumb">tableau.aps.k12.co.us / Credit Recovery / prototype</span>
+</div>
+<nav class="tabs" id="tabs" aria-label="Dashboards"></nav>
+<div class="stage">
+  <div class="dash" id="dash">
+    <div class="banner" id="banner"></div>
+    <div class="body">
+      <main class="main" id="main"></main>
+      <aside class="pane" id="pane" aria-label="Filters"></aside>
+    </div>
+    <div id="infoHost"></div>
+  </div>
+</div>
+<div class="tip" id="tip" role="tooltip"></div>
+<div class="menu" id="menu"></div>
+
+<script>
+"use strict";
+/* ============================ Synthetic data ============================ */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const R=mulberry32(20261001);
+const ri=(a,b)=>a+Math.floor(R()*(b-a+1));
+const pick=a=>a[Math.floor(R()*a.length)];
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(R()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function wpick(arr){let t=0;for(const a of arr)t+=a.w;let r=R()*t;for(const a of arr){r-=a.w;if(r<=0)return a}return arr[arr.length-1]}
+
+const AS_OF='Oct 1, 2026';
+const FIRST=['Aaliyah','Abdi','Adrian','Aisha','Alejandro','Amara','Andre','Ariana','Bao','Brianna','Camila','Carlos','Chloe','Daniel','Deja','Diego','Elena','Emmanuel','Esperanza','Fatima','Gabriel','Hana','Ibrahim','Imani','Isaac','Jada','Jamal','Jasmine','Jesus','Jordan','Kai','Kayla','Khalid','Layla','Leah','Liam','Luis','Malik','Mariam','Mateo','Maya','Mohamed','Nadia','Naomi','Nia','Omar','Paola','Rafael','Rosa','Samuel','Sara','Sofia','Tariq','Thanh','Valeria','Victor','Xavier','Yasmin','Yusuf','Zoe'];
+const LAST=['Abara','Acosta','Adeyemi','Aguilar','Ahmed','Alvarez','Banda','Barrera','Bui','Campos','Castillo','Chavez','Cruz','Delgado','Diallo','Dominguez','Espinoza','Estrada','Flores','Fuentes','Garcia','Gomez','Gutierrez','Haile','Hassan','Herrera','Huynh','Ibarra','Jimenez','Johnson','Kamara','Kim','Lopez','Luna','Martinez','Medina','Mendoza','Mohamud','Morales','Nguyen','Nunez','Okafor','Ortega','Ortiz','Pacheco','Perez','Pham','Ramirez','Reyes','Rios','Rivera','Robinson','Rodriguez','Romero','Salazar','Sanchez','Santos','Silva','Soto','Tesfaye','Torres','Tran','Valdez','Vargas','Vasquez','Walker','Warsame','Williams','Yohannes','Zamora'];
+const STAFF_LAST=['Abbott','Bennett','Calloway','Dorsey','Ellison','Fairbanks','Greer','Hollis','Ingram','Jarvis','Keller','Lindqvist','Maddox','Navarro','Oakley','Prescott','Quintero','Rasmussen','Sutton','Thornton','Underwood','Vance','Whitlock','Yardley','Zeller','Archer','Brandt','Corwin','Delacroix','Emerson','Fontaine','Galloway','Hargrove','Ishikawa','Jessup','Kowalski','Larkin','Merritt','Nolan','Osei','Pruitt','Redd','Sato','Tillman','Upton','Voss','Winslow','Yoon'];
+const STAFF_FIRST=['Alicia','Brent','Carmen','Dana','Eric','Felicia','Grant','Helen','Ivan','Joy','Kevin','Lauren','Marcus','Nora','Owen','Priya','Quinn','Rachel','Steven','Tara','Victor','Wendy','Yolanda','Zach'];
+
+/* School totals calibrated to discovery (10/1/2026). n = current students (9,239 total).
+   fStu = students with >=1 required F (2,521). lab/cr = Edgenuity Lab / CreditRec students (CR Dashboard sheet).
+   ip = OCR F's in progress. ubr = failing UBR-eligible courses (Wk 7). orph = tab records with no transcript F.
+   ocrY = OCR completions this year. */
+const SCHOOLS=[
+ {id:123,name:'APS Avenues Alternative Education Campus',short:'APS Avenues',n:234,fStu:140,lab:71,cr:77,ocr:true,ip:118,ubr:31,orph:22,ocrY:9},
+ {id:109,name:'Aurora Central Campus',short:'Aurora Central',n:1443,fStu:545,lab:34,cr:138,ocr:true,ip:177,ubr:34,orph:114,ocrY:6},
+ {id:40,name:'Aurora West College Preparatory Academy',short:'Aurora West',n:402,fStu:95,lab:0,cr:0,ocr:false,ip:0,ubr:50,orph:0,ocrY:0},
+ {id:42,name:'Gateway High School',short:'Gateway',n:1472,fStu:430,lab:335,cr:327,ocr:true,ip:575,ubr:179,orph:454,ocrY:31},
+ {id:43,name:'Hinkley High School',short:'Hinkley',n:1194,fStu:330,lab:72,cr:76,ocr:true,ip:110,ubr:104,orph:73,ocrY:22},
+ {id:52,name:'Lotus School for Excellence',short:'Lotus',n:355,fStu:40,lab:0,cr:0,ocr:false,ip:0,ubr:12,orph:1,ocrY:0},
+ {id:44,name:'Rangeview High School',short:'Rangeview',n:1820,fStu:395,lab:100,cr:131,ocr:true,ip:259,ubr:249,orph:241,ocrY:37},
+ {id:85,name:'Vanguard Classical School - East',short:'Vanguard East',n:216,fStu:20,lab:0,cr:0,ocr:false,ip:0,ubr:6,orph:0,ocrY:0},
+ {id:73,name:'Vista PEAK Preparatory',short:'Vista PEAK',n:2103,fStu:526,lab:347,cr:308,ocr:true,ip:640,ubr:216,orph:489,ocrY:68}
+];
+
+/* Required courses (CR dropdown). [name, OCR code, weight, slot (HS year usually taken), credit, regular-code override] */
+const COURSE_DEF=[
+ ['English 9','HLAOCR1012',10,1,1],['English 10','HLAOCR1042',10,2,1],['English 11','HLAOCR3122',9,3,1],['English 12','HLAOCR4102',3,3,1],
+ ['Integrated Math 1','HMAOCR1010',10,1,1],['Integrated Math 2','HMAOCR1013',9,2,1],['Integrated Math 3','HMAOCR1014',7,3,1],['Integrated Math 4',null,.6,3,1,'HMA1015'],
+ ['Algebra 1','HMAOCR1091',1.5,1,1],['Algebra II','HMAOCR1026',1.5,3,1],['Geometry','HMAOCR1070',1.5,2,1],['Financial Algebra','HMAOCR5070',1.5,3,1],
+ ['Probability and Statistics','HMAOCR1040',1,3,1],['CPM Precalculus','HMAOCR1016',1,3,1],['Math Analysis','HMAOCR2035',.5,3,1],['Mathematical Modeling','HMAOCR5080',.5,3,1],
+ ['Biology','HSCOCR1042',8,1,1],['Chemistry','HSCOCR2012',6,2,1],['Physics','HSCOCR4012',6,3,1],['Earth Science','HSCOCR1011',2,1,1],
+ ['Physical Science','HSCOCR3012',2,1,1],['Environmental Science','HSCOCR5021',1.5,3,1],
+ ['US History','HSSOCR3012',7,3,1],['Global Studies','HSSOCR1011',7,1,1],['World History','HSSOCR1012',3,2,1],['Civics','HSSOCR1021',6,2,1],
+ ['Economics','HSSOCR1013',2,3,.5],['Financial Literacy','HSSOCR1045',1.5,3,.5],['Psychology','HSSOCR5092',1,3,.5],['Sociology','HSSOCR1225',.7,3,.5],
+ ['Latin American History','HSSOCR1050',.5,3,.5],['African-American Studies','HSSOCR5062',.5,3,.5],
+ ['Spanish 1','HFLOCR5012',2.5,1,1],['Spanish 2','HFLOCR5025',2,2,1],['Spanish 3','HFLOCR5032',.7,3,1],['French 1','HFLOCR1012',.5,2,1],
+ ['French 2',null,.3,3,1,'HFL1025'],['Chinese 1','HFLOCR3046',.3,2,1],
+ ['Art Elective I','HAROCR1012',1.5,1,.5],['Art Elective II','HAROCR1013',.8,2,.5],['Physical Education','HPEOCR1011',2.5,1,.5],
+ ['Health & Activity for Life','HPEOCR1015',1.5,2,.5],['Health','HHEOCR1011',2,1,.5]
+];
+const SUBJ={LA:'English',MA:'Math',SC:'Science',SS:'Social Studies',FL:'World Language',AR:'Art',PE:'Physical Education',HE:'Health'};
+const COURSES=COURSE_DEF.map(([name,ocr,w,slot,needed,reg])=>{const r=reg||ocr.replace('OCR','');return {name,ocr,w,slot,needed,reg:r,subj:SUBJ[r.slice(1,3)]}});
+
+const usedStaff=new Set();
+function staff(){let n;do{n=pick(STAFF_LAST)+', '+pick(STAFF_FIRST)}while(usedStaff.has(n));usedStaff.add(n);return n}
+function emailOf(name,dom,suffix){const [l,f]=name.split(', ');return (f+'.'+l).toLowerCase().replace(/[^a-z.]/g,'')+(suffix||'')+'@'+dom}
+const yl=y=>`${y-1}-${String(y).slice(2)}`;
+const fmtC=x=>x.toFixed(2);
+
+const SMAP={recOCR:['Recovered','OCR'],summer:['Recovered','Summer'],retake:['Recovered','Retake'],same:['Recovered','Same-year credit'],transfer:['Recovered','Transfer'],
+  ipOCR:['In progress','OCR'],ipRetake:['In progress','Retake'],partial:['Partial credit',null],ns:['Not scheduled',null]};
+function setStatus(f,k){
+  const [g,route]=SMAP[k];f.k=k;f.group=g;f.route=route;
+  f.status=route?`${g}: ${route}`:g;
+  f.earned=g==='Recovered'?f.needed:k==='partial'?f.orig+0.25*ri(1,f.nf-1):f.orig;
+  if(g==='Recovered'){f.recYear=k==='recOCR'?ri(f.fYear,2026):k==='retake'?ri(f.fYear+1,2026):f.fYear}
+  f.sched=k==='ipOCR'?'OCR in CreditRec':k==='ipRetake'?'Retake':'None';
+}
+function drawStatus(sc,f){
+  const p=sc.ocr?{recOCR:.093,summer:.0015,retake:.165,same:.0195,transfer:.006,ipRetake:0,partial:.076}
+               :{recOCR:.03,summer:.003,retake:.15,same:.03,transfer:.008,ipRetake:.01,partial:.06};
+  let r=R(),k='ns';
+  for(const key in p){r-=p[key];if(r<0){k=key;break}}
+  if(k==='recOCR'&&!f.c.ocr)k='retake';
+  if(k==='retake'&&f.fYear>=2026)k=R()<.3?'ipRetake':'ns';
+  if(k==='partial'&&f.nf<2)k='ns';
+  return k;
+}
+function genFs(s,sc,ipMean){
+  const g=+s.grade,yb=g-9,startY=2027-yb;
+  let k=0;if(s.cr)k=Math.max(1,Math.min(4,Math.round(ipMean+(R()-0.5)*1.6)));
+  let n=1+Math.floor(-Math.log(1-R())*3.4);n=Math.min(n,12);n=Math.max(n,k);
+  const avail=COURSES.filter(c=>c.slot<=yb),used=new Set();
+  for(let i=0;i<n;i++){
+    const pool=avail.filter(c=>!used.has(c.name));if(!pool.length)break;
+    const c=wpick(pool);used.add(c.name);
+    let fy=startY+c.slot-1;if(fy<2026&&R()<.15)fy++;
+    let nf;if(c.needed===0.5)nf=R()<.6?1:2;else{const r=R();nf=r<.35?1:r<.65?2:r<.8?3:4}
+    const q0=c.needed===0.5?(R()<.5?1:3)+(nf===1&&R()<.5?1:0):1+Math.floor(R()*(4-nf+1));
+    s.fs.push({s,c,fYear:fy,fQ:'Q'+q0,needed:c.needed,orig:c.needed-0.25*nf,nf});
+  }
+  if(k)shuffle(s.fs.filter(f=>f.c.ocr)).slice(0,k).forEach(f=>setStatus(f,'ipOCR'));
+  for(const f of s.fs)if(!f.k)setStatus(f,drawStatus(sc,f));
+}
+function setTab(f){
+  const r=R();
+  if(f.group==='Recovered')f.tab=r<.607?'Yes':r<.663?'No':'None';
+  else if(f.group==='In progress')f.tab=r<.08?'Yes':r<.60?'No':'None';
+  else f.tab=r<.034?'Yes':r<.273?'No':'None';
+  if(f.tab!=='None'){
+    if(f.group==='In progress')f.tabYear=R()<.7?2027:ri(f.fYear,2026);
+    else if(f.group==='Recovered')f.tabYear=ri(f.fYear,Math.max(f.fYear,f.recYear));
+    else f.tabYear=(f.tab==='No'&&R()<.26)?2027:ri(f.fYear,2026);
+  }
+}
+function nextStep(f){
+  if(f.group==='Recovered'){
+    if(f.route==='Transfer')return 'Verify transfer';
+    if(f.tab==='None')return 'Enter CR tab record (Yes)';
+    if(f.tab==='No')return 'Mark CR tab Yes';
+    return 'None';
+  }
+  if(f.group==='In progress')return f.tab==='None'?'Enter CR tab record':'Monitor progress';
+  const sched=f.c.ocr?'Schedule OCR':'Schedule retake';
+  return f.tab==='None'?sched+' + enter CR tab record':sched;
+}
+
+const UBR_EXTRA=[
+ {name:'AP English Language and Composition',reg:'HLA7012',subj:'English',ap:true,g:['11','12']},
+ {name:'AP US History',reg:'HSS7032',subj:'Social Studies',ap:true,g:['11']},
+ {name:'AP Biology',reg:'HSC7042',subj:'Science',ap:true,g:['11','12']},
+ {name:'AP Calculus AB',reg:'HMA7051',subj:'Math',ap:true,g:['12']},
+ {name:'AP Spanish Language',reg:'HFL7052',subj:'World Language',ap:true,g:['11','12']}
+];
+const ELD_CODE={'English 9':'HLAELD1150','English 10':'HLAELD2150','English 11':'HLAELD3150','English 12':'HLAELD4150'};
+const UBR_BY_GRADE={
+ '09':['English 9','Integrated Math 1','Biology','Global Studies','Spanish 1','Algebra 1'],
+ '10':['English 10','Integrated Math 2','Chemistry','World History','Civics','Spanish 2','Geometry'],
+ '11':['English 11','Integrated Math 3','US History','Physics','Algebra II','Spanish 2'],
+ '12':['English 12','Economics','Financial Algebra','Probability and Statistics','Physics','Integrated Math 3']
+};
+const COURSE_BY_NAME=Object.fromEntries(COURSES.map(c=>[c.name,c]));
+
+const ALL=[];let idSeq=100120;
+for(const sc of SCHOOLS){
+  const nc=Math.max(2,Math.round(sc.n/330));
+  sc.counselors=Array.from({length:nc},()=>staff()).sort();
+  sc.teachers={};
+  for(const sub of ['English','Math','Science','Social Studies','World Language'])sc.teachers[sub]=Array.from({length:sub==='World Language'?2:3},()=>staff());
+  const st=[];
+  for(let i=0;i<sc.n;i++){
+    const first=pick(FIRST),last=pick(LAST),r=R();
+    st.push({sc,first,last,name:last+', '+first,grade:r<.28?'09':r<.54?'10':r<.78?'11':'12',fs:[],audit:[],ubr:[],lab:false,cr:false});
+  }
+  st.sort((a,b)=>a.name.localeCompare(b.name));
+  st.forEach((s,i)=>{s.counselor=sc.counselors[Math.floor(i*nc/sc.n)]});
+  for(const s of shuffle(st)){idSeq+=ri(1,7);s.id='S-'+idSeq;s.email=emailOf(s.name,'students.example.org',String(idSeq).slice(-2))}
+  const cand=shuffle(st.filter(s=>s.grade!=='09'));
+  const fS=cand.slice(0,sc.fStu);
+  const crS=fS.slice(0,sc.cr);crS.forEach(s=>s.cr=true);
+  const ov=Math.round(Math.min(sc.lab,sc.cr)*0.88);
+  crS.slice(0,ov).forEach(s=>s.lab=true);
+  fS.slice(sc.cr,sc.cr+(sc.lab-ov)).forEach(s=>s.lab=true);
+  const ipMean=sc.cr?0.93*sc.ip/sc.cr:0;
+  for(const s of fS)genFs(s,sc,ipMean);
+  const recOcr=shuffle(fS.flatMap(s=>s.fs).filter(f=>f.k==='recOCR'));
+  recOcr.slice(0,sc.ocrY).forEach(f=>f.recYear=2027);
+  for(const s of fS)for(const f of s.fs)setTab(f);
+
+  /* Audit checks */
+  const add=(s,chk,course,code,detail)=>s.audit.push({chk,s,course,code,detail});
+  for(const s of st){
+    for(const f of s.fs){
+      const out=fmtC(f.needed-f.earned);
+      if(f.tab==='No'&&f.tabYear===2027&&(f.group==='Partial credit'||f.group==='Not scheduled'))
+        add(s,'1',f.c.name,f.c.ocr||f.c.reg,`CR tab record entered ${yl(2027)} (${f.fQ}); no OCR or retake scheduled`);
+      if(f.k==='ipOCR'&&f.tab==='None')
+        add(s,'3',f.c.name,f.c.ocr,`Enrolled in ${f.c.ocr} (CreditRec period); no CR tab record for this course`);
+      if(f.group==='Recovered'&&f.tab==='No')
+        add(s,'4',f.c.name,f.c.ocr||f.c.reg,`CR tab = No, but the transcript shows the credit earned via ${f.route} ${yl(f.recYear)}`);
+      if(f.group==='Recovered'&&f.tab==='None')
+        add(s,'6',f.c.name,f.c.ocr||f.c.reg,`Recovered via ${f.route} ${yl(f.recYear)}; no CR tab record`);
+      if(f.group!=='Recovered'&&f.tab==='None')
+        add(s,'7',f.c.name,f.c.reg,`F in ${yl(f.fYear)} ${f.fQ}; ${out} credit outstanding; no CR tab record`);
+      if(f.group!=='Recovered'&&f.tab==='Yes')
+        add(s,'A',f.c.name,f.c.reg,`CR tab = Yes, but ${out} credit is still outstanding on the transcript`);
+    }
+    if(s.lab&&!s.cr)add(s,'5','Edgenuity Lab','',`In Edgenuity Lab; no OCR course in the CreditRec period`);
+    if(s.cr&&!s.lab)add(s,'5','Edgenuity Lab','',`OCR course in the CreditRec period; not scheduled in Edgenuity Lab`);
+  }
+  const older=st.filter(s=>s.grade!=='09'),ocrCourses=COURSES.filter(c=>c.ocr);
+  for(let i=0;i<sc.orph;i++){
+    const s=pick(older),c=wpick(ocrCourses),y=ri(2025,2027);
+    add(s,'B',c.name,c.reg,`CR tab record (Q${ri(1,4)}, entered ${yl(y)}); no matching F on the transcript`);
+  }
+
+  /* UBR: current failing grades in eligible courses (Q1, in progress) */
+  let rows=0;const ubrPool=shuffle(st);let pi=0;
+  while(rows<sc.ubr&&pi<ubrPool.length){
+    const s=ubrPool[pi++];
+    const nC=Math.min(sc.ubr-rows,R()<.7?1:R()<.85?2:3);
+    const names=shuffle(UBR_BY_GRADE[s.grade]).slice(0,nC);
+    const absent=Math.round(Math.min(68,3+R()*R()*60+(s.fs.length?6:0)));
+    for(let nm of names){
+      let course;
+      const ap=UBR_EXTRA.filter(x=>x.g.includes(s.grade));
+      if(ap.length&&R()<.10){const a=pick(ap);course={name:a.name,reg:a.reg,subj:a.subj,ap:true,eld:false}}
+      else{const c=COURSE_BY_NAME[nm];
+        if(ELD_CODE[nm]&&R()<.12)course={name:nm,reg:ELD_CODE[nm],subj:'English',ap:false,eld:true};
+        else course={name:c.name,reg:c.reg,subj:c.subj,ap:false,eld:false}}
+      if(s.ubr.some(u=>u.code===course.reg))continue;
+      const teacher=pick(sc.teachers[course.subj]);
+      const isU=sc.id===73&&R()<.45;
+      s.ubr.push({s,course:course.name,code:course.reg,subj:course.subj,ap:course.ap,eld:course.eld,
+        letter:isU?'U':'F',pctScore:ri(22,59),term:'Q1',absent,section:String(ri(1,9)),period:String(ri(1,8)),
+        teacher,temail:emailOf(teacher,'aps.example')});
+      rows++;
+    }
+  }
+  ALL.push(...st);
+}
+
+/* Graduation on-track. ASSUMED expectations as of Q1 (real values come from CreditRequirementByQuarter2027). */
+const EXPECT={'10':5.5,'11':11,'12':16.5};
+for(const s of ALL){
+  if(s.grade==='09'){s.onTrack=true;s.otElig=false;continue}
+  s.otElig=true;
+  const yd=+s.grade-9;
+  const elect=s.fs.length?s.fs.length*0.25*R()*2.5:(R()<.06?ri(1,4)*0.25:0);
+  let outStart=0,recNow=0;
+  for(const f of s.fs){
+    const lateRec=f.group==='Recovered'&&f.recYear===2027;
+    outStart+=f.needed-(lateRec?f.orig:f.earned);
+    if(lateRec)recNow+=f.needed-f.orig;
+  }
+  const base=yd*6.75+(R()-0.5)*0.5;
+  s.credStart=Math.round((base-elect-outStart)*4)/4;
+  s.credNow=s.credStart+recNow;
+  s.expected=EXPECT[s.grade];
+  s.onTrack=s.credNow>=s.expected;
+  s.startedOff=s.credStart<s.expected;
+  s.openF=s.fs.filter(f=>f.group!=='Recovered').length;
+}
+
+const CHECKS=[
+ {id:'1',label:'CR tab record, nothing scheduled',owner:'CR coordinator'},
+ {id:'2',label:'OCR course not in CreditRec period',owner:'CR coordinator'},
+ {id:'3',label:'OCR enrollment, no CR tab record',owner:'CR coordinator'},
+ {id:'4',label:'Credit earned, tab not "Yes"',owner:'CR coordinator'},
+ {id:'5',label:'Edgenuity Lab / CreditRec mismatch',owner:'CR coordinator'},
+ {id:'6',label:'Recovered, no CR tab record',owner:'CR coordinator'},
+ {id:'7',label:'Required F, no CR tab record',owner:'Counselor'},
+ {id:'A',label:'Tab "Yes", credit not recovered',owner:'CR coordinator'},
+ {id:'B',label:'Tab record, no transcript F',owner:'CR coordinator'}
+];
+const CHECK_BY_ID=Object.fromEntries(CHECKS.map(c=>[c.id,c]));
+const GROUPS=['Recovered','In progress','Partial credit','Not scheduled'];
+const GCOLOR={'Recovered':'var(--st-rec)','In progress':'var(--st-ip)','Partial credit':'var(--st-part)','Not scheduled':'var(--st-ns)'};
+const GHEX={'Recovered':'#00877C','In progress':'#8CCBC4','Partial credit':'#F6D27F','Not scheduled':'#E08A00'};
+const GTEXT={'Recovered':'#FFFFFF','In progress':'#10302D','Partial credit':'#3A2A00','Not scheduled':'#221400'};
+
+/* ============================ State ============================ */
+const TABS=[['district','District Summary'],['school','School Overview'],['flist','Student F List'],['ubr',"UBR: Current F's"],['audit','Audit Exceptions'],['ontrack','Graduation On-Track']];
+function defaults(){return{tab:'district',school:'(All)',counselor:'(All)',grade:'(All)',info:false,
+  fl:{status:new Set(['In progress','Partial credit','Not scheduled']),course:'(All)',subject:'(All)',fyear:'(All)',sort:{key:'counselor',dir:1}},
+  ubr:{subject:'(All)',teacher:'(All)',ap:'Include',eld:'Include'},
+  au:{sid:null,chk:null,owner:'(All)'},
+  ot:{status:'(All)',sid:null,g:null}}}
+let S=defaults();
+
+/* ============================ Helpers ============================ */
+const esc=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmt=n=>Number(n).toLocaleString('en-US');
+const pct=(a,b)=>b?(100*a/b).toFixed(1)+'%':'–';
+const pctN=(a,b)=>b?100*a/b:0;
+function hexA(hex,a){const n=parseInt(hex.slice(1),16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`}
+let TIPS=[],ACTS=[],MENUS=[];
+const tip=lines=>`data-tip="${TIPS.push(lines)-1}"`;
+const act=fn=>`data-act="${ACTS.push(fn)-1}"`;
+const menu=(lines,actions)=>`data-menu="${MENUS.push({lines,actions})-1}"`;
+const schoolByName=n=>SCHOOLS.find(s=>s.name===n);
+
+function stuOk(s){return (S.school==='(All)'||s.sc.name===S.school)&&(S.counselor==='(All)'||s.counselor===S.counselor)&&(S.grade==='(All)'||s.grade===S.grade)}
+function students(){return ALL.filter(stuOk)}
+function ubrRows(s){return s.ubr.filter(r=>(S.ubr.ap==='Include'||!r.ap)&&(S.ubr.eld==='Include'||!r.eld))}
+
+function metrics(list){
+  const m={stu:list.length,fStu:0,addr:0,f:0,fAddr:0,rec:0,ip:0,partial:0,ns:0,notAddr:0,ocrY:0,
+    lab:0,cr:0,labOnly:0,crOnly:0,audit:0,ubrStu:0,ubrC:0,tabOpen:0,tabSched:0,otElig:0,ot:0,startOff:0,backOn:0,stillOff:0,noTab:0,openStu:0};
+  for(const s of list){
+    if(s.fs.length){
+      m.fStu++;let all=true;
+      for(const f of s.fs){
+        m.f++;
+        if(f.group==='Recovered'){m.rec++;m.fAddr++;if(f.route==='OCR'&&f.recYear===2027)m.ocrY++}
+        else if(f.group==='In progress'){m.ip++;m.fAddr++}
+        else{all=false;m.notAddr++;if(f.group==='Partial credit')m.partial++;else m.ns++}
+        if(f.tab==='No'&&f.tabYear===2027&&f.group!=='Recovered'){m.tabOpen++;if(f.sched==='OCR in CreditRec')m.tabSched++}
+        if(f.group!=='Recovered'&&f.tab==='None')m.noTab++;
+      }
+      if(all)m.addr++;else m.openStu++;
+    }
+    if(s.lab)m.lab++;if(s.cr)m.cr++;if(s.lab&&!s.cr)m.labOnly++;if(s.cr&&!s.lab)m.crOnly++;
+    m.audit+=s.audit.length;
+    const u=ubrRows(s);if(u.length){m.ubrStu++;m.ubrC+=u.length}
+    if(s.otElig){m.otElig++;if(s.onTrack)m.ot++;if(s.startedOff){m.startOff++;if(s.onTrack)m.backOn++;else m.stillOff++}}
+  }
+  return m;
+}
+function ban(label,value,sub,tipLines,ph){return `<div class="ban" ${tipLines?tip(tipLines):''}><div class="l">${esc(label)}</div><div class="v${ph?' ph':''}">${value}</div><div class="s">${sub}</div></div>`}
+function bans(items){return `<div class="bans" style="grid-template-columns:repeat(${items.length},1fr)">${items.join('')}</div>`}
+function statusCell(g,label){return `<span class="sq" style="background:${GCOLOR[g]}"></span>${esc(label)}`}
+function go(tab){S.tab=tab;window.scrollTo({top:0})}
+
+/* ============================ Filter pane ============================ */
+function selCard(label,key,opts,val){
+  return `<div class="fcard"><label class="ftitle" for="f-${key.replace('.','-')}">${esc(label)}</label><select id="f-${key.replace('.','-')}" data-f="${key}">${opts.map(o=>`<option${o===val?' selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
+}
+function radioCard(label,key,opts,val){
+  return `<fieldset class="fcard" style="border:none;padding:0;margin:0 0 12px"><legend class="ftitle">${esc(label)}</legend>${opts.map(o=>`<label class="opt"><input type="radio" name="${key}" data-f="${key}" value="${esc(o)}"${o===val?' checked':''}>${esc(o)}</label>`).join('')}</fieldset>`;
+}
+function checkCard(label,key,opts,set){
+  return `<fieldset class="fcard" style="border:none;padding:0;margin:0 0 12px"><legend class="ftitle">${esc(label)}</legend>${opts.map(o=>`<label class="opt"><input type="checkbox" data-fc="${key}" value="${esc(o)}"${set.has(o)?' checked':''}><span class="sq" style="background:${GCOLOR[o]};margin-right:0"></span>${esc(o)}</label>`).join('')}</fieldset>`;
+}
+function globalCards(){
+  const sc=S.school==='(All)'?null:schoolByName(S.school);
+  const couns=['(All)',...(sc?sc.counselors:SCHOOLS.flatMap(s=>s.counselors).sort())];
+  return selCard('School','school',['(All)',...SCHOOLS.map(s=>s.name)],S.school)+
+    selCard('Counselor','counselor',couns,S.counselor)+
+    selCard('Grade','grade',['(All)','09','10','11','12'],S.grade);
+}
+function legend(){
+  return `<div class="fcard legend"><div class="ftitle">F status</div>${GROUPS.map(g=>`<div class="row"><span class="sq" style="background:${GCOLOR[g]}"></span>${g}</div>`).join('')}</div>`;
+}
+
+/* ============================ Dashboards ============================ */
+function rDistrict(){
+  const list=students(),m=metrics(list);
+  const top=bans([
+    ban('Students with a required F: every F recovered or scheduled',pct(m.addr,m.fStu),`${fmt(m.addr)} of ${fmt(m.fStu)} students`,
+      [['Definition','Student counts only if all of their required F\'s are recovered or in progress'],['Students with a required F',fmt(m.fStu)]]),
+    ban("Required F's recovered or scheduled",pct(m.fAddr,m.f),`${fmt(m.fAddr)} of ${fmt(m.f)} F's`,
+      [['Recovered',fmt(m.rec)],['In progress',fmt(m.ip)],['Partial credit',fmt(m.partial)],['Not scheduled',fmt(m.ns)]]),
+    ban('Students failing a UBR-eligible course now',fmt(m.ubrStu),`${fmt(m.ubrC)} failing courses. UBRs issued and completed: phase 2`,
+      [['Source','Current Q1 grades (posted, else in progress)'],['Include AP',S.ubr.ap],['Include ELD',S.ubr.eld]]),
+    ban('Open CR tab records correctly scheduled',pct(m.tabSched,m.tabOpen),`${fmt(m.labOnly)} in Lab, not CreditRec. ${fmt(m.crOnly)} in CreditRec, not Lab`,
+      [['Open records this year (Completed = No)',fmt(m.tabOpen)],['OCR course in the CreditRec period',fmt(m.tabSched)]]),
+    ban('Grades 10–12 on track to graduate',pct(m.ot,m.otElig),`${fmt(m.backOn)} started the year off track and are back on track`,
+      [['On track',fmt(m.ot)],['Grades 10–12',fmt(m.otElig)],['Still off track',fmt(m.stillOff)]])
+  ]);
+  const rows=[];const tot={stu:0,fStu:0,addr:0,f:0,rec:0,ip:0,notAddr:0,ocrY:0,lab:0,cr:0,labOnly:0,crOnly:0,audit:0};
+  for(const sc of SCHOOLS){
+    const sl=list.filter(s=>s.sc===sc);if(!sl.length)continue;
+    const x=metrics(sl);for(const k in tot)tot[k]+=x[k];
+    const p=pctN(x.addr,x.fStu);
+    const mm=v=>v?`style="background:${hexA('#F2A900',Math.min(.75,.15+v/150))}"`:'';
+    rows.push(`<tr class="click" tabindex="0" ${menu([['School',sc.name],['Students with a required F',fmt(x.fStu)],['Every F addressed',pct(x.addr,x.fStu)],['Audit exceptions',fmt(x.audit)]],
+      [['Go to School Overview',()=>{S.school=sc.name;S.counselor='(All)';go('school')}],['Go to Student F List',()=>{S.school=sc.name;S.counselor='(All)';go('flist')}],['Go to Audit Exceptions',()=>{S.school=sc.name;S.counselor='(All)';S.au.sid=null;S.au.chk=null;go('audit')}]])}>
+      <td>${esc(sc.short)}</td><td class="num">${fmt(x.stu)}</td><td class="num">${fmt(x.fStu)}</td>
+      <td class="num" style="color:${p<40?'#B35F00':'var(--text)'};font-weight:600">${pct(x.addr,x.fStu)}</td>
+      <td class="num">${fmt(x.f)}</td><td class="num">${fmt(x.rec)}</td><td class="num">${fmt(x.ip)}</td><td class="num">${fmt(x.notAddr)}</td>
+      <td class="num">${fmt(x.ocrY)}</td><td class="num">${fmt(x.lab)}</td><td class="num">${fmt(x.cr)}</td>
+      <td class="num" ${mm(x.labOnly)}>${fmt(x.labOnly)}</td><td class="num" ${mm(x.crOnly)}>${fmt(x.crOnly)}</td><td class="num">${fmt(x.audit)}</td></tr>`);
+  }
+  const table=`<div class="scroll"><table class="tbl"><thead><tr><th>School</th><th class="num">Students</th><th class="num">Students with a required F</th><th class="num">Every F addressed</th>
+    <th class="num">Required F's</th><th class="num">Recovered</th><th class="num">In progress</th><th class="num">Not addressed</th><th class="num">OCR completions this year</th>
+    <th class="num">Edgenuity Lab</th><th class="num">CreditRec period</th><th class="num">In Lab, not CreditRec</th><th class="num">In CreditRec, not Lab</th><th class="num">Audit exceptions</th></tr></thead>
+    <tbody>${rows.join('')}</tbody><tfoot><tr class="total"><td>Grand total</td><td class="num">${fmt(tot.stu)}</td><td class="num">${fmt(tot.fStu)}</td><td class="num">${pct(tot.addr,tot.fStu)}</td>
+    <td class="num">${fmt(tot.f)}</td><td class="num">${fmt(tot.rec)}</td><td class="num">${fmt(tot.ip)}</td><td class="num">${fmt(tot.notAddr)}</td><td class="num">${fmt(tot.ocrY)}</td>
+    <td class="num">${fmt(tot.lab)}</td><td class="num">${fmt(tot.cr)}</td><td class="num">${fmt(tot.labOnly)}</td><td class="num">${fmt(tot.crOnly)}</td><td class="num">${fmt(tot.audit)}</td></tr></tfoot></table></div>`;
+  return top+`<div class="ws-title">Schools <span class="note">Click a school for actions</span></div>`+table+
+    `<div class="ws-title">Outcome of required F's by school <span class="note">Share of each school's F's</span></div>`+stackBars(list);
+}
+function stackBars(list){
+  const out=[];
+  for(const sc of SCHOOLS){
+    const fs=list.filter(s=>s.sc===sc).flatMap(s=>s.fs);if(!fs.length)continue;
+    const c=Object.fromEntries(GROUPS.map(g=>[g,0]));fs.forEach(f=>c[f.group]++);
+    out.push(`<div class="brow"><div class="lab">${esc(sc.short)}</div><div class="stack">${GROUPS.map(g=>{const w=100*c[g]/fs.length;
+      return w>0?`<div class="seg" style="width:${w}%;background:${GHEX[g]};color:${GTEXT[g]}" ${tip([['School',sc.short],['Status',g],["F's",fmt(c[g])],['Share',w.toFixed(1)+'%']])}>${w>=7?Math.round(w)+'%':''}</div>`:''}).join('')}</div><div class="num mut">${fmt(fs.length)}</div></div>`);
+  }
+  return `<div class="bars">${out.join('')||'<div class="empty">No F\'s match these filters.</div>'}<div class="axis"><div></div><div class="ticks"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div><div class="num">F's</div></div></div>`;
+}
+
+function rSchool(){
+  const list=students(),m=metrics(list);
+  const top=bans([
+    ban('Students with a required F',fmt(m.fStu),`${fmt(m.stu)} students in view`),
+    ban('Every F recovered or scheduled',pct(m.addr,m.fStu),`${fmt(m.addr)} students`),
+    ban("Required F's recovered or scheduled",pct(m.fAddr,m.f),`${fmt(m.fAddr)} of ${fmt(m.f)} F's`),
+    ban('Failing a UBR-eligible course',fmt(m.ubrStu),`${fmt(m.ubrC)} failing courses`),
+    ban('Edgenuity Lab / CreditRec',`${fmt(m.lab)} / ${fmt(m.cr)}`,`${fmt(m.labOnly+m.crOnly)} mismatched students`),
+    ban('Audit exceptions',fmt(m.audit),`${fmt(m.noTab)} F's not on the CR tab`)
+  ]);
+  const byC={};
+  for(const s of list)for(const f of s.fs){const k=f.c.name;(byC[k]=byC[k]||{c:f.c,n:0,g:Object.fromEntries(GROUPS.map(g=>[g,0]))});byC[k].n++;byC[k].g[f.group]++}
+  const crs=Object.values(byC).sort((a,b)=>b.n-a.n);
+  const max=Object.fromEntries(GROUPS.map(g=>[g,Math.max(1,...crs.map(x=>x.g[g]))]));
+  const ctab=`<div class="scroll" style="max-height:470px"><table class="tbl"><thead><tr><th>Course</th><th>Subject</th>${GROUPS.map(g=>`<th class="num">${g}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${
+    crs.map(x=>`<tr class="click" tabindex="0" ${menu([['Course',x.c.name],["Required F's",fmt(x.n)],['Not scheduled',fmt(x.g['Not scheduled'])]],[["Show these F's in the Student F List",()=>{S.fl.course=x.c.name;S.fl.subject='(All)';go('flist')}]])}>
+      <td>${esc(x.c.name)}</td><td class="mut">${esc(x.c.subj)}</td>${GROUPS.map(g=>`<td class="num" style="background:${hexA(GHEX[g],0.08+0.62*x.g[g]/max[g])}">${fmt(x.g[g])}</td>`).join('')}<td class="num"><b>${fmt(x.n)}</b></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No F\'s match these filters.</td></tr>'
+  }</tbody></table></div>`;
+  const byK={};
+  for(const s of list){const k=s.counselor;const o=byK[k]=byK[k]||{k,sc:s.sc,case:0,openStu:0,notAddr:0,noTab:0,audit:0,ip:0};
+    o.case++;o.audit+=s.audit.length;let open=false;
+    for(const f of s.fs){if(f.group==='Partial credit'||f.group==='Not scheduled'){o.notAddr++;open=true}if(f.group==='In progress')o.ip++;if(f.group!=='Recovered'&&f.tab==='None')o.noTab++}
+    if(open)o.openStu++}
+  const ks=Object.values(byK).sort((a,b)=>b.notAddr-a.notAddr);
+  const kmax=Math.max(1,...ks.map(o=>o.notAddr));
+  const ktab=`<div class="scroll" style="max-height:470px"><table class="tbl"><thead><tr><th>Counselor</th>${S.school==='(All)'?'<th>School</th>':''}<th class="num">Caseload</th><th class="num">Students with F's not addressed</th><th class="num">F's not addressed</th><th class="num">F's in progress</th><th class="num">F's not on CR tab</th></tr></thead><tbody>${
+    ks.map(o=>`<tr class="click" tabindex="0" ${menu([['Counselor',o.k],['Caseload',fmt(o.case)],["F's not addressed",fmt(o.notAddr)]],[['Show caseload in the Student F List',()=>{S.school=o.sc.name;S.counselor=o.k;go('flist')}],['Show caseload in Audit Exceptions',()=>{S.school=o.sc.name;S.counselor=o.k;go('audit')}]])}>
+      <td>${esc(o.k)}</td>${S.school==='(All)'?`<td class="mut">${esc(o.sc.short)}</td>`:''}<td class="num">${fmt(o.case)}</td><td class="num">${fmt(o.openStu)}</td>
+      <td class="num" style="background:${hexA('#E08A00',0.08+0.55*o.notAddr/kmax)}">${fmt(o.notAddr)}</td><td class="num">${fmt(o.ip)}</td><td class="num">${fmt(o.noTab)}</td></tr>`).join('')
+  }</tbody></table></div>`;
+  const hint=S.school==='(All)'?`<div class="cap" style="margin-bottom:6px">Showing all schools. Pick one school in the School filter to see a single school.</div>`:'';
+  return hint+top+`<div class="cols" style="grid-template-columns:1.15fr 1fr"><div><div class="ws-title">Outcome by course <span class="note">Click a course for actions</span></div>${ctab}</div>
+    <div><div class="ws-title">Counselors <span class="note">Click a counselor for actions</span></div>${ktab}</div></div>`;
+}
+
+const FL_COLS=[
+ ['Student',f=>f.s.name],['Student ID',f=>f.s.id],['Gr',f=>f.s.grade],['Counselor',f=>f.s.counselor],['Course',f=>f.c.name],['Course #',f=>f.c.reg],
+ ['F year',f=>f.fYear],['F qtr',f=>f.fQ],['Credit needed',f=>f.needed,1],['Credit earned',f=>f.earned,1],['Outstanding',f=>f.needed-f.earned,1],
+ ['Status',f=>f.status],['Scheduled now',f=>f.sched],['Edgenuity Lab',f=>f.s.lab?'Y':'N'],['CR tab',f=>f.tab],['Next step',f=>nextStep(f)]
+];
+function flRows(){
+  return students().flatMap(s=>s.fs).filter(f=>S.fl.status.has(f.group)&&(S.fl.course==='(All)'||f.c.name===S.fl.course)&&(S.fl.subject==='(All)'||f.c.subj===S.fl.subject)&&(S.fl.fyear==='(All)'||yl(f.fYear)===S.fl.fyear));
+}
+function rFList(){
+  const rows=flRows();
+  const {key,dir}=S.fl.sort;const col=FL_COLS.find(c=>c[0]===key)||FL_COLS[3];
+  rows.sort((a,b)=>{const x=col[1](a),y=col[1](b);return (x<y?-1:x>y?1:0)*dir||a.s.name.localeCompare(b.s.name)||a.fYear-b.fYear});
+  const nStu=new Set(rows.map(f=>f.s)).size;const LIM=500;
+  const head=FL_COLS.map(([k,,n])=>`<th class="sortable${n?' num':''}" ${act(()=>{S.fl.sort=S.fl.sort.key===k?{key:k,dir:-S.fl.sort.dir}:{key:k,dir:1}})}>${esc(k)}${S.fl.sort.key===k?`<span class="arr">${S.fl.sort.dir>0?'▲':'▼'}</span>`:''}</th>`).join('');
+  const body=rows.slice(0,LIM).map(f=>{const ns=nextStep(f);return `<tr ${tip([['Student',f.s.name+' ('+f.s.id+')'],['School',f.s.sc.short],['Course',f.c.name+(f.c.ocr?' (OCR '+f.c.ocr+')':' (no OCR course)')],['F',`${yl(f.fYear)} ${f.fQ}, ${f.nf} quarter(s) failed`],['Status',f.status+(f.recYear?' '+yl(f.recYear):'')],['CR tab',f.tab+(f.tabYear?' (entered '+yl(f.tabYear)+')':'')]])}>
+    <td>${esc(f.s.name)}</td><td>${f.s.id}</td><td>${f.s.grade}</td><td>${esc(f.s.counselor)}</td><td>${esc(f.c.name)}</td><td class="mut">${f.c.reg}</td>
+    <td>${yl(f.fYear)}</td><td>${f.fQ}</td><td class="num">${fmtC(f.needed)}</td><td class="num">${fmtC(f.earned)}</td><td class="num">${fmtC(f.needed-f.earned)}</td>
+    <td>${statusCell(f.group,f.status)}</td><td>${f.sched}</td><td>${f.s.lab?'Y':'N'}</td><td>${f.tab==='None'?'<span class="warn">None</span>':f.tab}</td>
+    <td class="${ns==='None'||ns==='Monitor progress'?'mut':'warn'}">${esc(ns)}</td></tr>`}).join('');
+  return `<div class="ws-title">Student F list <span class="note">${fmt(rows.length)} F's for ${fmt(nStu)} students${rows.length>LIM?`. The prototype shows the first ${LIM}; Tableau scrolls the full list`:''}. Click a header to sort</span></div>
+    <div class="scroll" style="max-height:640px"><table class="tbl"><thead><tr>${head}</tr></thead><tbody>${body||`<tr><td colspan="16" class="empty">No F's match these filters. Add statuses or clear a filter.</td></tr>`}</tbody></table></div>`;
+}
+function paneFList(){
+  const subj=['(All)',...[...new Set(COURSES.map(c=>c.subj))]];
+  const courses=['(All)',...COURSES.filter(c=>S.fl.subject==='(All)'||c.subj===S.fl.subject).map(c=>c.name)];
+  return globalCards()+'<hr>'+checkCard('Status','fl.status',GROUPS,S.fl.status)+selCard('Subject','fl.subject',subj,S.fl.subject)+selCard('Course','fl.course',courses,S.fl.course)+
+    selCard('F school year','fl.fyear',['(All)','2023-24','2024-25','2025-26'],S.fl.fyear);
+}
+
+function ubrList(){return students().flatMap(s=>ubrRows(s)).filter(r=>(S.ubr.subject==='(All)'||r.subj===S.ubr.subject)&&(S.ubr.teacher==='(All)'||r.teacher===S.ubr.teacher))}
+function rUBR(){
+  const rows=ubrList();const nStu=new Set(rows.map(r=>r.s)).size;
+  const top=bans([
+    ban('Students failing a UBR-eligible course',fmt(nStu),'Current Q1 grade F or U'),
+    ban('Failing eligible courses',fmt(rows.length),`Week 7 of Q1, as of ${AS_OF}`),
+    ban('UBRs issued by teachers','—','Phase 2: Edgenuity / form data',null,true),
+    ban('UBRs completed by students','—','Phase 2: Edgenuity / form data',null,true)
+  ]);
+  const bySc=SCHOOLS.map(sc=>({sc,n:rows.filter(r=>r.s.sc===sc).length})).filter(x=>S.school==='(All)'||x.sc.name===S.school);
+  const mx=Math.max(1,...bySc.map(x=>x.n));
+  const bars=`<div class="bars">${bySc.map(x=>`<div class="brow"><div class="lab">${esc(x.sc.short)}</div><div><div class="hbar" style="width:${100*x.n/mx}%" ${tip([['School',x.sc.short],['Failing eligible courses',fmt(x.n)]])}></div></div><div class="num">${fmt(x.n)}</div></div>`).join('')}</div>`;
+  rows.sort((a,b)=>a.s.sc.short.localeCompare(b.s.sc.short)||a.teacher.localeCompare(b.teacher)||+a.period-+b.period||a.s.name.localeCompare(b.s.name));
+  const tbl=`<div class="scroll" style="max-height:430px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>Course #</th><th>Course</th><th>Score</th><th>Term</th><th class="num">Absent (% of minutes)</th><th>Student email</th><th>Section</th><th>Period</th><th>Teacher</th><th>Teacher email</th><th>School</th><th>UBR submitted</th><th>UBR completed</th></tr></thead><tbody>${
+    rows.slice(0,500).map(r=>`<tr ${tip([['Student',r.s.name],['Counselor',r.s.counselor],['Course',r.course+(r.ap?' (AP)':'')+(r.eld?' (ELD)':'')],['Current grade',`${r.letter} (${r.pctScore}%), in progress`],["Open required F's on transcript",fmt(r.s.fs.filter(f=>f.group!=='Recovered').length)]])}>
+      <td>${esc(r.s.name)}</td><td>${r.s.id}</td><td>${r.s.grade}</td><td class="mut">${r.code}</td><td>${esc(r.course)}</td><td><b>${r.letter}</b> <span class="mut">${r.pctScore}%</span></td><td>${r.term}</td>
+      <td class="num" style="background:${r.absent>=20?hexA('#E08A00',.35):r.absent>=10?hexA('#F2A900',.22):'transparent'}">${r.absent}%</td><td class="mut">${esc(r.s.email)}</td><td>${r.section}</td><td>${r.period}</td>
+      <td>${esc(r.teacher)}</td><td class="mut">${esc(r.temail)}</td><td>${esc(r.s.sc.short)}</td><td class="ph">Phase 2</td><td class="ph">Phase 2</td></tr>`).join('')||'<tr><td colspan="16" class="empty">No failing eligible courses match these filters.</td></tr>'
+  }</tbody></table></div>`;
+  return top+`<div class="cols" style="grid-template-columns:1fr"><div><div class="ws-title">Failing UBR-eligible courses by school</div>${bars}</div></div>`+
+    `<div class="ws-title">Current F's in UBR-eligible courses <span class="note">${fmt(rows.length)} rows${rows.length>500?'. The prototype shows the first 500':''}</span></div>`+tbl;
+}
+function paneUBR(){
+  const tlist=['(All)',...new Set(students().flatMap(s=>ubrRows(s)).filter(r=>S.ubr.subject==='(All)'||r.subj===S.ubr.subject).map(r=>r.teacher).sort())];
+  if(!tlist.includes(S.ubr.teacher))S.ubr.teacher='(All)';
+  return globalCards()+'<hr>'+selCard('Subject','ubr.subject',['(All)','English','Math','Science','Social Studies','World Language'],S.ubr.subject)+selCard('Teacher','ubr.teacher',tlist,S.ubr.teacher)+
+    '<hr>'+radioCard('Include AP courses (parameter)','ubr.ap',['Include','Exclude'],S.ubr.ap)+radioCard('Include ELD courses (parameter)','ubr.eld',['Include','Exclude'],S.ubr.eld)+
+    `<p class="pnote">Eligible: HMA, HLA, HSC, HSS and HFL courses, excluding OCR, summer and lab/support/intervention codes. Absence shading: 10%+ light orange, 20%+ orange.</p>`;
+}
+
+function rAudit(){
+  const list=students();const scs=SCHOOLS.filter(sc=>list.some(s=>s.sc===sc));
+  const items=list.flatMap(s=>s.audit).filter(a=>S.au.owner==='(All)'||CHECK_BY_ID[a.chk].owner===S.au.owner);
+  const cnt={};for(const a of items){const k=a.s.sc.id+'|'+a.chk;cnt[k]=(cnt[k]||0)+1}
+  const colMax=Object.fromEntries(CHECKS.map(c=>[c.id,Math.max(1,...scs.map(sc=>cnt[sc.id+'|'+c.id]||0))]));
+  const colTot=c=>items.filter(a=>a.chk===c).length;
+  const head=CHECKS.map(c=>`<th class="num sortable" ${act(()=>{S.au={...S.au,sid:null,chk:S.au.chk===c.id&&!S.au.sid?null:c.id}})} ${tip([['Check',c.id+'. '+c.label],['Owner',c.owner],['Click','Filter the detail to this check']])}>${c.id}. ${esc(c.label)}</th>`).join('');
+  const body=scs.map(sc=>`<tr><td>${esc(sc.short)}</td>${CHECKS.map(c=>{const v=cnt[sc.id+'|'+c.id]||0;const sel=S.au.sid===sc.id&&S.au.chk===c.id;
+    return `<td class="cell num${sel?' sel':''}" style="background:${v?hexA('#E08A00',0.08+0.6*v/colMax[c.id]):'transparent'}" ${act(()=>{S.au=sel?{...S.au,sid:null,chk:null}:{...S.au,sid:sc.id,chk:c.id}})} ${tip([['School',sc.short],['Check',c.id+'. '+c.label],['Items',fmt(v)],['Students',fmt(new Set(items.filter(a=>a.s.sc===sc&&a.chk===c.id).map(a=>a.s)).size)]])}>${fmt(v)}</td>`}).join('')}<td class="num"><b>${fmt(items.filter(a=>a.s.sc===sc).length)}</b></td></tr>`).join('');
+  const matrix=`<div class="scroll"><table class="tbl"><thead><tr><th>School</th>${head}<th class="num">Total</th></tr></thead><tbody>${body}</tbody>
+    <tfoot><tr class="total"><td>Grand total</td>${CHECKS.map(c=>`<td class="num">${fmt(colTot(c.id))}</td>`).join('')}<td class="num">${fmt(items.length)}</td></tr></tfoot></table></div>`;
+  let det=items;if(S.au.chk)det=det.filter(a=>a.chk===S.au.chk);if(S.au.sid)det=det.filter(a=>a.s.sc.id===S.au.sid);
+  det=det.slice().sort((a,b)=>a.chk.localeCompare(b.chk)||a.s.counselor.localeCompare(b.s.counselor)||a.s.name.localeCompare(b.s.name));
+  const selLabel=S.au.chk?`${CHECK_BY_ID[S.au.chk].id}. ${CHECK_BY_ID[S.au.chk].label}${S.au.sid?' at '+SCHOOLS.find(x=>x.id===S.au.sid).short:''}`:'All checks';
+  const dtab=`<div class="scroll" style="max-height:380px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>School</th><th>Counselor</th><th>Course</th><th>Course #</th><th>Check</th><th>Detail</th><th>Owner</th></tr></thead><tbody>${
+    det.slice(0,500).map(a=>`<tr><td>${esc(a.s.name)}</td><td>${a.s.id}</td><td>${a.s.grade}</td><td>${esc(a.s.sc.short)}</td><td>${esc(a.s.counselor)}</td><td>${esc(a.course)}</td><td class="mut">${a.code}</td>
+      <td>${a.chk}. ${esc(CHECK_BY_ID[a.chk].label)}</td><td style="white-space:normal;min-width:280px">${esc(a.detail)}</td><td>${CHECK_BY_ID[a.chk].owner}</td></tr>`).join('')||'<tr><td colspan="10" class="empty">No exceptions for this selection.</td></tr>'
+  }</tbody></table></div>`;
+  return `<div class="ws-title">Exceptions by school and check <span class="note">Click a cell or a check header to filter the detail. Click again to clear</span></div>${matrix}
+    <div class="ws-title">Detail: ${esc(selLabel)} <span class="note">${fmt(det.length)} items${det.length>500?'. The prototype shows the first 500':''}</span></div>${dtab}`;
+}
+function paneAudit(){
+  return globalCards()+'<hr>'+selCard('Owner','au.owner',['(All)','CR coordinator','Counselor'],S.au.owner)+
+    `<p class="pnote">Check 2 has no exceptions this year and stays as a guardrail. Checks A and B will shrink once transfer credit and the family review are added.</p>`;
+}
+
+function rOnTrack(){
+  const list=students().filter(s=>s.otElig);const m=metrics(list);
+  const top=bans([
+    ban('Grades 10–12 on track',pct(m.ot,m.otElig),`${fmt(m.ot)} of ${fmt(m.otElig)} students`),
+    ban('Started the year off track, now on track',fmt(m.backOn),`of ${fmt(m.startOff)} who started off track`),
+    ban('Still off track',fmt(m.stillOff),`${pct(m.stillOff,m.otElig)} of grades 10–12`)
+  ]);
+  const scs=SCHOOLS.filter(sc=>list.some(s=>s.sc===sc));
+  const grid=`<div class="bars"><div class="brow" style="grid-template-columns:150px repeat(3,1fr);font-size:11.5px;color:var(--muted)"><div></div><div>Grade 10</div><div>Grade 11</div><div>Grade 12</div></div>${scs.map(sc=>`<div class="brow" style="grid-template-columns:150px repeat(3,1fr)"><div class="lab">${esc(sc.short)}</div>${['10','11','12'].map(g=>{
+      const sl=list.filter(s=>s.sc===sc&&s.grade===g);const on=sl.filter(s=>s.onTrack).length;const p=pctN(on,sl.length);const sel=S.ot.sid===sc.id&&S.ot.g===g;
+      return `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;${sel?'outline:2px solid var(--aps-purple);':''}" ${act(()=>{S.ot=sel?{...S.ot,sid:null,g:null}:{...S.ot,sid:sc.id,g}})} ${tip([['School',sc.short],['Grade',g],['On track',`${fmt(on)} of ${fmt(sl.length)}`],['Click','Filter the student list']])}>
+        <div style="flex:1;height:14px;background:var(--hdr)"><div style="height:100%;width:${p}%;background:${p>=75?'var(--st-rec)':'var(--st-ns)'}"></div></div><span class="num" style="width:44px">${sl.length?Math.round(p)+'%':'–'}</span></div>`}).join('')}</div>`).join('')}</div>`;
+  let sl=list;if(S.ot.sid)sl=sl.filter(s=>s.sc.id===S.ot.sid&&s.grade===S.ot.g);
+  const stat=s=>s.onTrack?(s.startedOff?'Back on track':'On track'):'Off track';
+  if(S.ot.status!=='(All)')sl=sl.filter(s=>stat(s)===S.ot.status);
+  sl=sl.slice().sort((a,b)=>(a.credNow-a.expected)-(b.credNow-b.expected));
+  const tbl=`<div class="scroll" style="max-height:420px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>School</th><th>Counselor</th><th class="num">Credits at start of year</th><th class="num">Credits earned now</th><th class="num">Credits expected (Q1)</th><th class="num">Gap</th><th class="num">Open required F's</th><th>Status</th></tr></thead><tbody>${
+    sl.slice(0,500).map(s=>{const gap=s.credNow-s.expected,st=stat(s);return `<tr><td>${esc(s.name)}</td><td>${s.id}</td><td>${s.grade}</td><td>${esc(s.sc.short)}</td><td>${esc(s.counselor)}</td>
+      <td class="num">${fmtC(s.credStart)}</td><td class="num">${fmtC(s.credNow)}</td><td class="num">${fmtC(s.expected)}</td>
+      <td class="num" style="color:${gap<0?'#B35F00':'var(--text)'};font-weight:600">${gap>=0?'+':''}${fmtC(gap)}</td><td class="num">${s.openF}</td>
+      <td><span class="sq" style="background:${st==='Off track'?'var(--st-ns)':st==='Back on track'?'var(--st-ip)':'var(--st-rec)'}"></span>${st}</td></tr>`}).join('')||'<tr><td colspan="11" class="empty">No students match these filters.</td></tr>'
+  }</tbody></table></div>`;
+  return top+`<div class="ws-title">On track by school and grade <span class="note">Click a cell to filter the student list. Teal = 75%+ on track</span></div>${grid}
+    <div class="ws-title">Students <span class="note">${fmt(sl.length)} students, largest credit gap first${sl.length>500?'. The prototype shows the first 500':''}</span></div>${tbl}`;
+}
+function paneOnTrack(){
+  return globalCards()+'<hr>'+selCard('On-track status','ot.status',['(All)','On track','Back on track','Off track'],S.ot.status)+
+    `<p class="pnote">Grade 9 has no credit expectation until Q1 grades post, so it is left out. Expected credits shown here are placeholders until the real CreditRequirementByQuarter2027 values are joined in.</p>`;
+}
+
+/* ============================ Info panels (show/hide container) ============================ */
+const INFO={
+ district:[`<h2>About this view</h2><p>District roll-up for the CR coordinator. Every required-course F a current student has ever earned, judged against the transcript.</p><ul><li><b>Every F addressed</b>: a student counts only when all of their required F's are recovered or in progress.</li><li><b>Not addressed</b>: partial credit or nothing scheduled.</li><li><b>Lab / CreditRec mismatches</b> are true set differences, not the old net "Discrepancies."</li></ul>`,
+   `<h2>Tableau build</h2><ul><li>Five BANs: one sheet each, text marks.</li><li>School table: Measure Names / Measure Values, conditional color via calc on Background.</li><li>Row click: Menu filter actions to School Overview, Student F List and Audit Exceptions (Show all values on clear).</li><li>Outcome bars: 100% stacked bar, Percent of Total table calc across Status.</li></ul>`],
+ school:[`<h2>About this view</h2><p>One school's CR picture for admins and counselors. Pick the school in the School filter.</p><ul><li><b>Outcome by course</b>: required F's by status, darker = more F's in that column.</li><li><b>Counselors</b>: caseloads, F's still needing action, and F's never entered on the CR tab.</li></ul>`,
+   `<h2>Tableau build</h2><ul><li>Course table: highlight table (Status on Columns, COUNT of F on Color).</li><li>Menu actions: course → Student F List (Course), counselor → Student F List / Audit (Counselor).</li><li>School filter shared with all dashboards via Selected Worksheets.</li></ul>`],
+ flist:[`<h2>About this view</h2><p>The counselor action list: one row per required-course F. The default hides recovered F's; tick Recovered to audit those too.</p><ul><li><b>Credit needed</b> = credits attempted in the year of the first F. <b>Outstanding</b> = needed minus earned.</li><li><b>Next step</b> combines status and the CR tab: schedule OCR or a retake, enter a tab record, or mark the tab Yes.</li></ul>`,
+   `<h2>Tableau build</h2><ul><li>Text table at student × course-family grain (from the student-F table in SQL).</li><li>Status color: shape or square marks on Status, or a colored Status column.</li><li>Next step: a CASE calc on Status group, CR tab and HasOCR.</li><li>Tooltip carries F year/quarter detail and CR tab entry year.</li></ul>`],
+ ubr:[`<h2>About this view</h2><p>Today's failing grades (F or U) in UBR-eligible courses, so teachers and counselors can issue UBRs before the quarter's grades post. Uses the grades-dashboard rule: posted score, else the in-progress score.</p><ul><li>Submissions and completions arrive in phase 2 (Edgenuity or form data).</li><li>AP and ELD stay included until the CR team decides.</li></ul>`,
+   `<h2>Tableau build</h2><ul><li>Include AP / Include ELD: string parameters, each with a calc filter (<code>[Include AP]="Include" OR NOT [IsAP]</code>).</li><li>Teacher card: Only Relevant Values.</li><li>Phase 2 columns: placeholder calcs until the Edgenuity feed exists.</li></ul>`],
+ audit:[`<h2>About this view</h2><p>Where the CR tab and the transcript or schedule disagree. The transcript is the source of truth.</p><ul><li>Checks 1–6, A and B belong to the CR coordinator; check 7 (required F never entered on the CR tab) belongs to the counselor.</li><li>Click a cell to see its items below; click again to clear.</li></ul>`,
+   `<h2>Tableau build</h2><ul><li>Matrix: highlight table, School × Check, COUNT on Color, per-check color range.</li><li>Cell click: Select filter action on the same dashboard (Single-select only unchecked, Show all values on clear).</li><li>Detail: long table at one row per exception (Check, Detail text built in SQL).</li></ul>`],
+ ontrack:[`<h2>About this view</h2><p>Credits earned against the expected credits for each grade and quarter. "Started off track" compares transcript credits as of the first day of school; no snapshot needed.</p><ul><li>Back on track = started off track, now meets the expectation (mostly OCR completions this year).</li><li>Expected credits are placeholders until <code>CreditRequirementByQuarter2027</code> is joined.</li></ul>`,
+   `<h2>Tableau build</h2><ul><li>Grid: bar chart with Grade on Columns, School on Rows, on-track % (SUM/SUM) on Columns, color by threshold.</li><li>Click: Select filter action to the student list.</li><li>Gap = Credits earned − Credits expected, sorted ascending.</li></ul>`]
+};
+
+/* ============================ Render ============================ */
+const VIEWS={district:[rDistrict,()=>globalCards()+'<hr>'+legend()],school:[rSchool,()=>globalCards()+'<hr>'+legend()],flist:[rFList,paneFList],ubr:[rUBR,paneUBR],audit:[rAudit,paneAudit],ontrack:[rOnTrack,paneOnTrack]};
+function render(){
+  TIPS=[];ACTS=[];MENUS=[];hideTip();hideMenu();
+  document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" ${act(()=>{S.tab=k})}>${esc(l)}</button>`).join('');
+  const title=TABS.find(t=>t[0]===S.tab)[1];
+  const scope=[S.school==='(All)'?'All schools':S.school,S.counselor!=='(All)'?'Counselor: '+S.counselor:'',S.grade!=='(All)'?'Grade '+S.grade:''].filter(Boolean).join(', ');
+  document.getElementById('banner').innerHTML=`<div><h1>Credit Recovery: ${esc(title)}</h1><div class="sub">${esc(scope)}. 2026-27, Q1 week 7. Data as of ${AS_OF}, refreshed daily from Infinite Campus.</div></div>
+    <div class="right"><button class="bbtn" aria-expanded="${S.info}" ${act(()=>{S.info=!S.info})}>ⓘ About this view</button><button class="bbtn reset" ${act(()=>{const t=S.tab;S=defaults();S.tab=t})}>Reset all filters</button></div>`;
+  const [rv,rp]=VIEWS[S.tab];
+  document.getElementById('main').innerHTML=rv();
+  document.getElementById('pane').innerHTML=rp();
+  const inf=INFO[S.tab];
+  document.getElementById('infoHost').innerHTML=S.info?`<div class="info" role="dialog" aria-label="About this view"><button class="close" aria-label="Close" ${act(()=>{S.info=false})}>✕</button><div>${inf[0]}</div><div>${inf[1]}</div></div>`:'';
+}
+
+/* ============================ Events ============================ */
+const tipEl=document.getElementById('tip'),menuEl=document.getElementById('menu');
+function linesHTML(lines){return lines.map(([k,v])=>`<div class="ln"><span>${esc(k)}:</span> <b>${esc(v)}</b></div>`).join('')}
+function place(el,x,y){const w=el.offsetWidth,h=el.offsetHeight;let L=x+14,T=y+14;if(L+w>innerWidth-8)L=x-w-14;if(T+h>innerHeight-8)T=y-h-14;el.style.left=Math.max(4,L)+'px';el.style.top=Math.max(4,T)+'px'}
+function hideTip(){if(tipEl)tipEl.style.display='none'}
+function hideMenu(){if(menuEl)menuEl.style.display='none'}
+document.addEventListener('mouseover',e=>{const t=e.target.closest('[data-tip]');if(!t||menuEl.style.display==='block'){return}tipEl.innerHTML=linesHTML(TIPS[+t.dataset.tip]);tipEl.style.display='block';place(tipEl,e.clientX,e.clientY)});
+document.addEventListener('mousemove',e=>{if(tipEl.style.display==='block'){if(!e.target.closest('[data-tip]'))hideTip();else place(tipEl,e.clientX,e.clientY)}});
+function openMenu(m,x,y){
+  hideTip();
+  menuEl.innerHTML=linesHTML(m.lines)+`<div class="acts">${m.actions.map(([l],i)=>`<button data-mi="${i}">${esc(l)}</button>`).join('')}</div>`;
+  menuEl.style.display='block';place(menuEl,x,y);
+  menuEl.onclick=ev=>{const b=ev.target.closest('[data-mi]');if(!b)return;m.actions[+b.dataset.mi][1]();hideMenu();render()};
+  const first=menuEl.querySelector('button');if(first)first.focus();
+}
+document.addEventListener('click',e=>{
+  if(e.target.closest('#menu'))return;
+  const a=e.target.closest('[data-act]');
+  if(a){ACTS[+a.dataset.act]();render();return}
+  const m=e.target.closest('[data-menu]');
+  if(m){openMenu(MENUS[+m.dataset.menu],e.clientX,e.clientY);return}
+  hideMenu();
+});
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){hideMenu();if(S.info){S.info=false;render()}return}
+  if(e.key==='Enter'){const m=e.target.closest&&e.target.closest('tr[data-menu]');if(m){const r=m.getBoundingClientRect();openMenu(MENUS[+m.dataset.menu],r.left+40,r.top+10)}}
+});
+function setPath(path,val){const p=path.split('.');if(p.length===1)S[p[0]]=val;else S[p[0]][p[1]]=val}
+document.addEventListener('change',e=>{
+  const t=e.target;
+  if(t.dataset.f){
+    setPath(t.dataset.f,t.value);
+    if(t.dataset.f==='school'){const sc=schoolByName(S.school);if(sc&&!sc.counselors.includes(S.counselor))S.counselor='(All)';S.au.sid=null;S.ot.sid=null;S.ot.g=null}
+    if(t.dataset.f==='counselor'&&S.counselor!=='(All)'){const sc=SCHOOLS.find(x=>x.counselors.includes(S.counselor));S.school=sc.name}
+    if(t.dataset.f==='fl.subject')S.fl.course='(All)';
+    render();
+  } else if(t.dataset.fc){
+    const set=S.fl.status;t.checked?set.add(t.value):set.delete(t.value);render();
+  }
+});
+render();
+</script>
+</body>
+</html>
