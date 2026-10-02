@@ -175,7 +175,7 @@ const STAFF_LAST=['Abbott','Bennett','Calloway','Dorsey','Ellison','Fairbanks','
 const STAFF_FIRST=['Alicia','Brent','Carmen','Dana','Eric','Felicia','Grant','Helen','Ivan','Joy','Kevin','Lauren','Marcus','Nora','Owen','Priya','Quinn','Rachel','Steven','Tara','Victor','Wendy','Yolanda','Zach'];
 
 /* School totals calibrated to discovery (10/1/2026). n = current students (9,239 total).
-   fStu = students with >=1 required F (2,521). lab/cr = Edgenuity Lab / CreditRec students (CR Dashboard sheet).
+   fStu = students with >=1 CR-eligible F (2,521). lab/cr = Edgenuity Lab / CreditRec students (CR Dashboard sheet).
    ip = OCR F's in progress. ubr = failing UBR-eligible courses (Wk 7). orph = tab records with no transcript F.
    ocrY = OCR completions this year. */
 const SCHOOLS=[
@@ -190,7 +190,7 @@ const SCHOOLS=[
  {id:73,name:'Vista PEAK Preparatory',short:'Vista PEAK',n:2103,fStu:526,lab:347,cr:308,ocr:true,ip:640,ubr:216,orph:489,ocrY:68}
 ];
 
-/* Required courses (CR dropdown). [name, OCR code, weight, slot (HS year usually taken), credit, regular-code override] */
+/* CR-eligible courses (CR tab dropdown). [name, OCR code, weight, slot (HS year usually taken), credit, regular-code override] */
 const COURSE_DEF=[
  ['English 9','HLAOCR1012',10,1,1],['English 10','HLAOCR1042',10,2,1],['English 11','HLAOCR3122',9,3,1],['English 12','HLAOCR4102',3,3,1],
  ['Integrated Math 1','HMAOCR1010',10,1,1],['Integrated Math 2','HMAOCR1013',9,2,1],['Integrated Math 3','HMAOCR1014',7,3,1],['Integrated Math 4',null,.6,3,1,'HMA1015'],
@@ -561,7 +561,7 @@ const CHECKS=[
  {id:'4',label:'Credit earned, tab not "Yes"',owner:'CR coordinator'},
  {id:'5',label:'Edgenuity Lab / CreditRec mismatch',owner:'CR coordinator'},
  {id:'6',label:'Recovered, no CR tab record',owner:'CR coordinator'},
- {id:'7',label:'Required F, no CR tab record',owner:'Counselor'},
+ {id:'7',label:'CR-eligible F, no CR tab record',owner:'Counselor'},
  {id:'A',label:'Tab "Yes", credit not recovered',owner:'CR coordinator'},
  {id:'B',label:'Tab record, no transcript F',owner:'CR coordinator'},
  {id:'C',label:'Program doesn\'t match cohort',owner:'Counselor'}
@@ -659,9 +659,9 @@ function legend(){
 function rDistrict(){
   const list=students(),m=metrics(list);
   const top=bans([
-    ban('Students with a required F: every F recovered or scheduled',pct(m.addr,m.fStu),`${fmt(m.addr)} of ${fmt(m.fStu)} students`,
-      [['Definition','Student counts only if all of their required F\'s are recovered or in progress'],['Students with a required F',fmt(m.fStu)]]),
-    ban("Required F's recovered or scheduled",pct(m.fAddr,m.f),`${fmt(m.fAddr)} of ${fmt(m.f)} F's`,
+    ban('Students with a CR-eligible F: every F recovered or scheduled',pct(m.addr,m.fStu),`${fmt(m.addr)} of ${fmt(m.fStu)} students`,
+      [['Definition','Student counts only if all of their CR-eligible F\'s are recovered or in progress'],['Students with a CR-eligible F',fmt(m.fStu)]]),
+    ban("CR-eligible F's recovered or scheduled",pct(m.fAddr,m.f),`${fmt(m.fAddr)} of ${fmt(m.f)} F's`,
       [['Recovered',fmt(m.rec)],['In progress',fmt(m.ip)],['Partial credit',fmt(m.partial)],['Not scheduled',fmt(m.ns)]]),
     ban('Students failing a UBR-eligible course now',fmt(m.ubrStu),`${fmt(m.ubrC)} failing courses. UBRs issued and completed: phase 2`,
       [['Source','Current Q1 grades (posted, else in progress)'],['Include AP',S.ubr.ap],['Include ELD',S.ubr.eld]]),
@@ -676,20 +676,20 @@ function rDistrict(){
     const x=metrics(sl);for(const k in tot)tot[k]+=x[k];
     const p=pctN(x.addr,x.fStu);
 
-    rows.push(`<tr class="click" tabindex="0" ${menu([['School',sc.name],['Students with a required F',fmt(x.fStu)],['Every F addressed',pct(x.addr,x.fStu)],['Audit exceptions',fmt(x.audit)]],
+    rows.push(`<tr class="click" tabindex="0" ${menu([['School',sc.name],['Students with a CR-eligible F',fmt(x.fStu)],['Every F addressed',pct(x.addr,x.fStu)],['Audit exceptions',fmt(x.audit)]],
       [['Go to School Overview',()=>{S.school=sc.name;S.counselor='(All)';go('school')}],['Go to Student F List',()=>{S.school=sc.name;S.counselor='(All)';go('flist')}],['Go to Audit Exceptions',()=>{S.school=sc.name;S.counselor='(All)';S.au.sid=null;S.au.chk=null;go('audit')}]])}>
       <td>${esc(sc.short)}</td>${mk(fmt(x.stu))}${mk(fmt(x.fStu))}${mk(pct(x.addr,x.fStu),p<40?CELL.lorange:'')}
       ${mk(fmt(x.f))}${mk(fmt(x.rec))}${mk(fmt(x.ip))}${mk(fmt(x.notAddr))}${mk(fmt(x.ocrY))}${mk(fmt(x.lab))}${mk(fmt(x.cr))}
       ${mk(fmt(x.labOnly),band(x.labOnly,25,75))}${mk(fmt(x.crOnly),band(x.crOnly,25,75))}${mk(fmt(x.audit))}</tr>`);
   }
-  const table=`<div class="scroll"><table class="tbl"><thead><tr><th>School</th><th class="num">Students</th><th class="num">Students with a required F</th><th class="num">Every F addressed</th>
-    <th class="num">Required F's</th><th class="num">Recovered</th><th class="num">In progress</th><th class="num">Not addressed</th><th class="num">OCR completions this year</th>
+  const table=`<div class="scroll"><table class="tbl"><thead><tr><th>School</th><th class="num">Students</th><th class="num">Students with a CR-eligible F</th><th class="num">Every F addressed</th>
+    <th class="num">CR-eligible F's</th><th class="num">Recovered</th><th class="num">In progress</th><th class="num">Not addressed</th><th class="num">OCR completions this year</th>
     <th class="num">Edgenuity Lab</th><th class="num">CreditRec period</th><th class="num">In Lab, not CreditRec</th><th class="num">In CreditRec, not Lab</th><th class="num">Audit exceptions</th></tr></thead>
     <tbody>${rows.join('')}</tbody><tfoot><tr class="total"><td>Grand total</td><td class="num">${fmt(tot.stu)}</td><td class="num">${fmt(tot.fStu)}</td><td class="num">${pct(tot.addr,tot.fStu)}</td>
     <td class="num">${fmt(tot.f)}</td><td class="num">${fmt(tot.rec)}</td><td class="num">${fmt(tot.ip)}</td><td class="num">${fmt(tot.notAddr)}</td><td class="num">${fmt(tot.ocrY)}</td>
     <td class="num">${fmt(tot.lab)}</td><td class="num">${fmt(tot.cr)}</td><td class="num">${fmt(tot.labOnly)}</td><td class="num">${fmt(tot.crOnly)}</td><td class="num">${fmt(tot.audit)}</td></tr></tfoot></table></div>`;
   return top+`<div class="ws-title">Schools <span class="note">Click a school for actions. Orange = under 40% addressed, or Lab/CreditRec mismatches (1–24, 25–74, 75+)</span></div>`+table+
-    `<div class="ws-title">Outcome of required F's by school <span class="note">Share of each school's F's</span></div>`+stackBars(list);
+    `<div class="ws-title">Outcome of CR-eligible F's by school <span class="note">Share of each school's F's</span></div>`+stackBars(list);
 }
 function stackBars(list){
   const out=[];
@@ -705,9 +705,9 @@ function stackBars(list){
 function rSchool(){
   const list=students(),m=metrics(list);
   const top=bans([
-    ban('Students with a required F',fmt(m.fStu),`${fmt(m.stu)} students in view`),
+    ban('Students with a CR-eligible F',fmt(m.fStu),`${fmt(m.stu)} students in view`),
     ban('Every F recovered or scheduled',pct(m.addr,m.fStu),`${fmt(m.addr)} students`),
-    ban("Required F's recovered or scheduled",pct(m.fAddr,m.f),`${fmt(m.fAddr)} of ${fmt(m.f)} F's`),
+    ban("CR-eligible F's recovered or scheduled",pct(m.fAddr,m.f),`${fmt(m.fAddr)} of ${fmt(m.f)} F's`),
     ban('Failing a UBR-eligible course',fmt(m.ubrStu),`${fmt(m.ubrC)} failing courses`),
     ban('Edgenuity Lab / CreditRec',`${fmt(m.lab)} / ${fmt(m.cr)}`,`${fmt(m.labOnly+m.crOnly)} mismatched students`),
     ban('Audit exceptions',fmt(m.audit),`${fmt(m.noTab)} F's not on the CR tab`)
@@ -717,7 +717,7 @@ function rSchool(){
   const crs=Object.values(byC).sort((a,b)=>b.n-a.n);
   const sb=(g,v)=>!v?'':hexA(GHEX[g],v>=50?.6:v>=10?.35:.15);
   const ctab=`<div class="scroll" style="max-height:470px"><table class="tbl"><thead><tr><th>Course</th><th>Subject</th>${GROUPS.map(g=>`<th class="num">${g}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${
-    crs.map(x=>`<tr class="click" tabindex="0" ${menu([['Course',x.c.name],["Required F's",fmt(x.n)],['Not scheduled',fmt(x.g['Not scheduled'])]],[["Show these F's in the Student F List",()=>{S.fl.course=x.c.name;S.fl.subject='(All)';go('flist')}]])}>
+    crs.map(x=>`<tr class="click" tabindex="0" ${menu([['Course',x.c.name],["CR-eligible F's",fmt(x.n)],['Not scheduled',fmt(x.g['Not scheduled'])]],[["Show these F's in the Student F List",()=>{S.fl.course=x.c.name;S.fl.subject='(All)';go('flist')}]])}>
       <td>${esc(x.c.name)}</td><td>${esc(x.c.subj)}</td>${GROUPS.map(g=>mk(fmt(x.g[g]),sb(g,x.g[g]))).join('')}${mk(fmt(x.n))}</tr>`).join('')||'<tr><td colspan="7" class="empty">No F\'s match these filters.</td></tr>'
   }</tbody></table></div>`;
   const byK={};
@@ -777,7 +777,7 @@ function rUBR(){
   const bars=`<div class="bars">${bySc.map(x=>`<div class="brow"><div class="lab">${esc(x.sc.short)}</div><div><div class="hbar" style="width:${100*x.n/mx}%" ${tip([['School',x.sc.short],['Failing eligible courses',fmt(x.n)]])}></div></div><div class="num">${fmt(x.n)}</div></div>`).join('')}</div>`;
   rows.sort((a,b)=>a.s.sc.short.localeCompare(b.s.sc.short)||a.teacher.localeCompare(b.teacher)||+a.period-+b.period||a.s.name.localeCompare(b.s.name));
   const tbl=`<div class="scroll" style="max-height:430px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>Course #</th><th>Course</th><th>Score</th><th>Term</th><th>Student email</th><th>Section</th><th>Period</th><th>Teacher</th><th>Teacher email</th><th>School</th><th>UBR submitted</th><th>UBR completed</th><th class="num">Absent (% of minutes)</th></tr></thead><tbody>${
-    rows.slice(0,500).map(r=>`<tr ${tip([['Student',r.s.name],['Counselor',r.s.counselor],['Course',r.course+(r.ap?' (AP)':'')+(r.eld?' (ELD)':'')],['Current grade',`${r.letter} (${r.pctScore}%), in progress`],["Open required F's on transcript",fmt(r.s.fs.filter(f=>f.group!=='Recovered').length)]])}>
+    rows.slice(0,500).map(r=>`<tr ${tip([['Student',r.s.name],['Counselor',r.s.counselor],['Course',r.course+(r.ap?' (AP)':'')+(r.eld?' (ELD)':'')],['Current grade',`${r.letter} (${r.pctScore}%), in progress`],["Open CR-eligible F's on transcript",fmt(r.s.fs.filter(f=>f.group!=='Recovered').length)]])}>
       <td>${esc(r.s.name)}</td><td>${r.s.id}</td><td>${r.s.grade}</td><td>${r.code}</td><td>${esc(r.course)}</td><td>${r.letter} (${r.pctScore}%)</td><td>${r.term}</td>
       <td>${esc(r.s.email)}</td><td>${r.section}</td><td>${r.period}</td><td>${esc(r.teacher)}</td><td>${esc(r.temail)}</td><td>${esc(r.s.sc.short)}</td><td>Phase 2</td><td>Phase 2</td>
       ${mk(r.absent+'%',r.absent>=20?CELL.orange:r.absent>=10?CELL.lorange:'')}</tr>`).join('')||'<tr><td colspan="16" class="empty">No failing eligible courses match these filters.</td></tr>'
@@ -827,7 +827,7 @@ function rOnTrack(){
   const top=bans([
     ban('Grades 10–12 off track by credits',fmt(off.length),`${pct(off.length,elig.length)} of ${fmt(elig.length)} students in grades 10–12`),
     ban('Average credits short',fmtC(avgShort),'Among students who are off track'),
-    ban('Off track with a required F not scheduled',fmt(off.filter(s=>s.fs.some(f=>f.group==='Partial credit'||f.group==='Not scheduled')).length),'Recovering those F\'s is the fastest way back'),
+    ban('Off track with a CR-eligible F not scheduled',fmt(off.filter(s=>s.fs.some(f=>f.group==='Partial credit'||f.group==='Not scheduled')).length),'Recovering those F\'s is the fastest way back'),
     ban('Back on track this year',fmt(backOn),'Counted only. On-track students are not listed')
   ]);
   const scs=SCHOOLS.filter(sc=>elig.some(s=>s.sc===sc));
@@ -839,7 +839,7 @@ function rOnTrack(){
   if(S.ot.status!=='(All)')sl=sl.filter(s=>otBand(s.expected-s.credNow)===S.ot.status);
   sl=sl.slice().sort((a,b)=>(b.expected-b.credNow)-(a.expected-a.credNow)||a.name.localeCompare(b.name));
   const nsF=s=>s.fs.filter(f=>f.group==='Partial credit'||f.group==='Not scheduled').length;
-  const tbl=`<div class="scroll" style="max-height:440px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>School</th><th>Counselor</th><th>Off track at start of year</th><th class="num">Credits at start of year</th><th class="num">Credits earned now</th><th class="num">Credits expected now</th><th class="num">Credits short</th><th class="num">Open required F's</th><th class="num">Required F's not scheduled</th></tr></thead><tbody>${
+  const tbl=`<div class="scroll" style="max-height:440px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>School</th><th>Counselor</th><th>Off track at start of year</th><th class="num">Credits at start of year</th><th class="num">Credits earned now</th><th class="num">Credits expected now</th><th class="num">Credits short</th><th class="num">Open CR-eligible F's</th><th class="num">CR-eligible F's not scheduled</th></tr></thead><tbody>${
     sl.slice(0,500).map(s=>{const short=s.expected-s.credNow,n=nsF(s);return `<tr class="click" tabindex="0" ${pagerMenu(s)}><td>${esc(s.name)}</td><td>${s.id}</td><td>${s.grade}</td><td>${esc(s.sc.short)}</td><td>${esc(s.counselor)}</td><td>${s.startedOff?'Yes':'No'}</td>
       ${mk(fmtC(s.credStart))}${mk(fmtC(s.credNow))}${mk(fmtC(s.expected))}${mk(fmtC(short),short>3?CELL.dorange:short>1?CELL.orange:CELL.lorange)}${mk(String(s.openF))}${mk(String(n),n?CELL.red:'')}</tr>`}).join('')||'<tr><td colspan="12" class="empty">No off-track students match these filters.</td></tr>'
   }</tbody></table></div>`;
@@ -905,7 +905,7 @@ function rStudent(){
     ban('Student',`<span style="font-size:20px">${esc(s.name)}</span>`,`${s.id}. Grade ${s.grade}. ${esc(s.sc.short)}`),
     ban('Counselor',`<span style="font-size:20px">${esc(s.counselor)}</span>`,`Edgenuity Lab: ${s.lab?'Yes':'No'}. OCR in CreditRec: ${s.cr?'Yes':'No'}`),
     ban('Credits earned',fmtC(s.credNow),s.otElig?`Expected now: ${fmtC(s.expected)} (${s.onTrack?'on track':'off track'})`:'First credits post after Q1'),
-    ban("Required F's",fmt(s.fs.length),`${fmt(nRec)} recovered. ${fmt(nIp)} in progress`),
+    ban("CR-eligible F's",fmt(s.fs.length),`${fmt(nRec)} recovered. ${fmt(nIp)} in progress`),
     `<div class="ban"><div class="l">Nothing scheduled</div><div class="v" style="color:${na?'var(--red)':'var(--st-rec)'}">${fmt(na)}</div><div class="s">${na?'Red boxes below':'Every F is recovered or in progress'}</div></div>`,
     `<div class="ban"><div class="l">Requirements to check</div><div class="v" style="color:${gaps?'var(--st-ns)':'var(--st-rec)'}">${fmt(gaps)}</div><div class="s">${gaps?'Behind pace or short after this year':'This schedule keeps every requirement on pace'}</div></div>`
   ]);
@@ -948,7 +948,7 @@ function rStudent(){
 }
 function paneStudent(){
   const list=spList();const cur=S.sp.stu;
-  return globalCards()+'<hr>'+radioCard("Only students with a required F",'sp.onlyF',['Yes','No'],S.sp.onlyF)+
+  return globalCards()+'<hr>'+radioCard("Only students with a CR-eligible F",'sp.onlyF',['Yes','No'],S.sp.onlyF)+
     `<div class="fcard"><label class="ftitle" for="f-sp-stu">Student</label><select id="f-sp-stu" data-f="sp.stu">${list.map(s=>`<option value="${s.id}"${s.id===cur?' selected':''}>${esc(s.name)} (${s.id})</option>`).join('')}</select></div>`+
     `<p class="pnote">${fmt(list.length)} students in this list. Counselors usually arrive here from a row on the Student F List, Audit Exceptions or Graduation Off-Track.</p>`+
     `<div class="fcard legend"><div class="ftitle">Cell color</div>${[['F (completed or now)',CELL.lred],['Scheduled this year',CELL.lav],['Recovered',CELL.lteal],['In progress',CELL.pteal],['Nothing scheduled / senior short',CELL.red],['Behind pace',CELL.lorange]].map(([l,c])=>`<div class="row"><span class="sq" style="background:${c}"></span>${l}</div>`).join('')}</div>`+
@@ -957,20 +957,20 @@ function paneStudent(){
 
 /* ============================ Info panels (show/hide container) ============================ */
 const INFO={
- district:[`<h2>About this view</h2><p>District roll-up for the CR coordinator. Every required-course F a current student has ever earned, judged against the transcript.</p><ul><li><b>Every F addressed</b>: a student counts only when all of their required F's are recovered or in progress.</li><li><b>Not addressed</b>: partial credit or nothing scheduled.</li><li><b>Lab / CreditRec mismatches</b> are true set differences, not the old net "Discrepancies."</li></ul>`,
+ district:[`<h2>About this view</h2><p>District roll-up for the CR coordinator. Every CR-eligible F a current student has ever earned, judged against the transcript.</p><ul><li><b>Every F addressed</b>: a student counts only when all of their CR-eligible F's are recovered or in progress.</li><li><b>Not addressed</b>: partial credit or nothing scheduled.</li><li><b>Lab / CreditRec mismatches</b> are true set differences, not the old net "Discrepancies."</li></ul>`,
    `<h2>Tableau build</h2><ul><li>Five BANs: one sheet each, text marks.</li><li>School table: Measure Names / Measure Values, conditional color via calc on Background.</li><li>Row click: Menu filter actions to School Overview, Student F List and Audit Exceptions (Show all values on clear).</li><li>Outcome bars: 100% stacked bar, Percent of Total table calc across Status.</li></ul>`],
- school:[`<h2>About this view</h2><p>One school's CR picture for admins and counselors. Pick the school in the School filter.</p><ul><li><b>Outcome by course</b>: required F's by status, darker = more F's in that column.</li><li><b>Counselors</b>: caseloads, F's still needing action, and F's never entered on the CR tab.</li></ul>`,
+ school:[`<h2>About this view</h2><p>One school's CR picture for admins and counselors. Pick the school in the School filter.</p><ul><li><b>Outcome by course</b>: CR-eligible F's by status, darker = more F's in that column.</li><li><b>Counselors</b>: caseloads, F's still needing action, and F's never entered on the CR tab.</li></ul>`,
    `<h2>Tableau build</h2><ul><li>Course table: highlight table (Status on Columns, COUNT of F on Color).</li><li>Menu actions: course → Student F List (Course), counselor → Student F List / Audit (Counselor).</li><li>School filter shared with all dashboards via Selected Worksheets.</li></ul>`],
- flist:[`<h2>About this view</h2><p>The counselor action list: one row per required-course F. The default hides recovered F's; tick Recovered to audit those too.</p><ul><li><b>Credit needed</b> = credits attempted in the year of the first F. <b>Outstanding</b> = needed minus earned.</li><li><b>Next step</b> combines status and the CR tab: schedule OCR or a retake, enter a tab record, or mark the tab Yes.</li></ul>`,
+ flist:[`<h2>About this view</h2><p>The counselor action list: one row per CR-eligible F. The default hides recovered F's; tick Recovered to audit those too.</p><ul><li><b>Credit needed</b> = credits attempted in the year of the first F. <b>Outstanding</b> = needed minus earned.</li><li><b>Next step</b> combines status and the CR tab: schedule OCR or a retake, enter a tab record, or mark the tab Yes.</li></ul>`,
    `<h2>Tableau build</h2><ul><li>Text table at student × course-family grain (from the student-F table in SQL).</li><li>Status color: shape or square marks on Status, or a colored Status column.</li><li>Next step: a CASE calc on Status group, CR tab and HasOCR.</li><li>Tooltip carries F year/quarter detail and CR tab entry year.</li></ul>`],
  ubr:[`<h2>About this view</h2><p>Today's failing grades (F or U) in UBR-eligible courses, so teachers and counselors can issue UBRs before the quarter's grades post. Uses the grades-dashboard rule: posted score, else the in-progress score.</p><ul><li>Submissions and completions arrive in phase 2 (Edgenuity or form data).</li><li>AP and ELD stay included until the CR team decides.</li></ul>`,
    `<h2>Tableau build</h2><ul><li>Include AP / Include ELD: string parameters, each with a calc filter (<code>[Include AP]="Include" OR NOT [IsAP]</code>).</li><li>Teacher card: Only Relevant Values.</li><li>Phase 2 columns: placeholder calcs until the Edgenuity feed exists.</li></ul>`],
- audit:[`<h2>About this view</h2><p>Where the CR tab and the transcript or schedule disagree. The transcript is the source of truth.</p><ul><li>Checks 1–6, A and B belong to the CR coordinator; check 7 (required F never entered on the CR tab) and check C (graduation program doesn't match the student's cohort) belong to the counselor.</li><li>Click a cell to see its items below; click again to clear.</li></ul>`,
+ audit:[`<h2>About this view</h2><p>Where the CR tab and the transcript or schedule disagree. The transcript is the source of truth.</p><ul><li>Checks 1–6, A and B belong to the CR coordinator; check 7 (CR-eligible F never entered on the CR tab) and check C (graduation program doesn't match the student's cohort) belong to the counselor.</li><li>Click a cell to see its items below; click again to clear.</li></ul>`,
    `<h2>Tableau build</h2><ul><li>Matrix: highlight table, School × Check, COUNT on Color, per-check color range.</li><li>Cell click: Select filter action on the same dashboard (Single-select only unchecked, Show all values on clear).</li><li>Detail: long table at one row per exception (Check, Detail text built in SQL).</li></ul>`],
  student:[`<h2>About this view</h2><p>One student's completed and currently scheduled courses, grouped by the graduation requirement each one fills. The requirement table at the top adds earned and scheduled credits, so a counselor can see whether this year's schedule keeps each requirement on pace. Red boxes are F's with nothing scheduled, or a senior requirement the schedule leaves short.</p><ul><li>Recovery courses (OCR, summer, retake, transfer) appear as their own indented rows in the year they were taken.</li><li><b>Access:</b> this page shows a whole transcript. Limit it to staff with a legitimate educational interest, ideally with a user filter so counselors see only their caseload.</li></ul>`,
    `<h2>Tableau build</h2><ul><li>Requirement table: credits earned (TranscriptCredit.standardID) + credits scheduled (active-trial roster × GradingTaskCredit.standardID) vs the cohort program's CreditRequirement rows; pace from CreditRequirementByQuarter2027.</li><li>Course sheet: Requirement, Year, Course # and Course on Rows; Quarter on Columns; ATTR(Score) on Text. Credits earned and F recovery as additional text columns.</li><li>Both tables are highlight tables built from long-format SQL output (one row per cell), so each cell can get its own background from one Cell Color calc. Label color is one fixed color for the whole sheet.</li><li>Q1–Q4 = TranscriptCourse.gradingTaskCode. S1/S2, Final, SS and blank codes (transfer credit, labeled with TranscriptCourse.schoolName) are one text cell built in SQL.</li><li>Requirement subtotals: Analysis → Totals → Add all subtotals. Program line: a calc in the worksheet title.</li><li>Reached from Menu actions on the Student F List, Audit and On-Track rows. Users can print it with Download → PDF.</li></ul>`],
  ontrack:[`<h2>About this view</h2><p>Only students in grades 10–12 who are behind on total credits. On-track students never appear.</p><ul><li><b>Off track</b> = credits earned now is below the expected total for the student's grade and the current quarter.</li><li><b>Credits expected now</b> = the Total column of <code>CreditRequirementByQuarter2027</code>, Before Q1 row (Q1 row once Q1 grades post). Vista PEAK has its own rows; Avenues, Vanguard and Lotus use the district rows.</li><li><b>Off track at start of year</b> compares transcript credits on the first day of school with the same Before Q1 row.</li></ul>`,
-   `<h2>Tableau build</h2><ul><li>Data source filter: [Credits earned now] &lt; [Credits expected now], so on-track students never load.</li><li>Grid: bar chart, Grade on Columns, School on Rows, COUNT and % off track as labels.</li><li>Click: Select filter action to the student list.</li><li>Credits short and Required F's not scheduled: highlight-table cells with a banded Cell Color calc.</li></ul>`]
+   `<h2>Tableau build</h2><ul><li>Data source filter: [Credits earned now] &lt; [Credits expected now], so on-track students never load.</li><li>Grid: bar chart, Grade on Columns, School on Rows, COUNT and % off track as labels.</li><li>Click: Select filter action to the student list.</li><li>Credits short and CR-eligible F's not scheduled: highlight-table cells with a banded Cell Color calc.</li></ul>`]
 };
 
 /* ============================ Render ============================ */
