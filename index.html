@@ -16,6 +16,7 @@
   --st-part:#F6D27F;     /* Partial credit (light orange) */
   --st-ns:#E08A00;       /* Not scheduled (orange) */
   --neutral:#BAB0AC;
+  --red:#C8102E;          /* Nothing scheduled on the one-pager */
 
   --page:#E9E9EB; --canvas:#FFFFFF; --text:#2B2B2B; --muted:#5F5F66;
   --grid:#E3E3E6; --grid-strong:#C4C4CA; --hdr:#F4F4F6; --band:#FAFAFB; --hover:#EEEAF6; --tab:#DADADE;
@@ -84,7 +85,6 @@ button,select,input{font:inherit;color:inherit}
 .tbl td{padding:4px 6px;border-bottom:1px solid var(--grid);white-space:nowrap}
 .tbl tbody tr:nth-child(even) td{background:var(--band)}
 .tbl tr.click{cursor:pointer}
-.tbl tr.click:hover td{background:var(--hover)}
 .tbl tr.total td{font-weight:600;border-top:1px solid var(--grid-strong);background:var(--hdr)}
 .tbl td.cell{cursor:pointer;text-align:right}
 .tbl td.cell.sel{outline:2px solid var(--aps-purple);outline-offset:-2px}
@@ -129,6 +129,11 @@ button,select,input{font:inherit;color:inherit}
 .info p,.info li{margin:0 0 6px}
 .info ul{padding-left:16px;margin:0}
 .info .close{position:absolute;top:6px;right:8px;background:none;border:none;font-size:16px;cursor:pointer;color:var(--muted)}
+.tbl.pager td.qc,.tbl.pager th.qc{text-align:center;width:38px}
+.tbl tr.grp td{background:var(--hdr)!important;border-top:1px solid var(--grid-strong);padding-top:6px}
+.tbl td.mk{color:#1A1A1A}
+.tbl td.rh{vertical-align:top;font-weight:600;background:var(--canvas)!important;border-right:1px solid var(--grid)}
+.tbl tr.sub td{border-top:1px solid var(--grid-strong);font-weight:600}
 .empty{padding:18px;color:var(--muted);text-align:center}
 .cap{font-size:11.5px;color:var(--muted);margin-top:4px}
 </style>
@@ -193,7 +198,7 @@ const COURSE_DEF=[
  ['Probability and Statistics','HMAOCR1040',1,3,1],['CPM Precalculus','HMAOCR1016',1,3,1],['Math Analysis','HMAOCR2035',.5,3,1],['Mathematical Modeling','HMAOCR5080',.5,3,1],
  ['Biology','HSCOCR1042',8,1,1],['Chemistry','HSCOCR2012',6,2,1],['Physics','HSCOCR4012',6,3,1],['Earth Science','HSCOCR1011',2,1,1],
  ['Physical Science','HSCOCR3012',2,1,1],['Environmental Science','HSCOCR5021',1.5,3,1],
- ['US History','HSSOCR3012',7,3,1],['Global Studies','HSSOCR1011',7,1,1],['World History','HSSOCR1012',3,2,1],['Civics','HSSOCR1021',6,2,1],
+ ['US History','HSSOCR3012',7,2,1],['Global Studies','HSSOCR1011',7,1,1],['World History','HSSOCR1012',3,2,1],['Civics','HSSOCR1021',6,3,.5],
  ['Economics','HSSOCR1013',2,3,.5],['Financial Literacy','HSSOCR1045',1.5,3,.5],['Psychology','HSSOCR5092',1,3,.5],['Sociology','HSSOCR1225',.7,3,.5],
  ['Latin American History','HSSOCR1050',.5,3,.5],['African-American Studies','HSSOCR5062',.5,3,.5],
  ['Spanish 1','HFLOCR5012',2.5,1,1],['Spanish 2','HFLOCR5025',2,2,1],['Spanish 3','HFLOCR5032',.7,3,1],['French 1','HFLOCR1012',.5,2,1],
@@ -363,26 +368,190 @@ for(const sc of SCHOOLS){
   ALL.push(...st);
 }
 
-/* Graduation on-track. ASSUMED expectations as of Q1 (real values come from CreditRequirementByQuarter2027). */
-const EXPECT={'10':5.5,'11':11,'12':16.5};
-for(const s of ALL){
-  if(s.grade==='09'){s.onTrack=true;s.otElig=false;continue}
-  s.otElig=true;
-  const yd=+s.grade-9;
-  const elect=s.fs.length?s.fs.length*0.25*R()*2.5:(R()<.06?ri(1,4)*0.25:0);
-  let outStart=0,recNow=0;
-  for(const f of s.fs){
-    const lateRec=f.group==='Recovered'&&f.recYear===2027;
-    outStart+=f.needed-(lateRec?f.orig:f.earned);
-    if(lateRec)recNow+=f.needed-f.orig;
+/* Synthetic transcripts (separate RNG so the F calibration above is unchanged).
+   One row per course per school year, Q1-Q4 scores across. Recovery rows (OCR, summer, retake, transfer) are their own rows. */
+const R2=mulberry32(4242);
+const r2i=(a,b)=>a+Math.floor(R2()*(b-a+1));
+const p2=a=>a[Math.floor(R2()*a.length)];
+const TRANSFER_SCHOOLS=['Overland High School','Smoky Hill High School','South High School','Colorado Virtual Academy','Adams City High School','Thornton High School'];
+const ELECTIVES=[['Digital Media','HCT2201'],['Ceramics','HAR2310'],['Weight Training','HPE2050'],['Culinary Arts','HCT3105'],['AFJROTC 1','HJR1001'],['Guitar','HMU1210'],['Yearbook','HCT2410'],['Drawing and Painting','HAR2120'],['Intro to Engineering','HCT1550'],['Concert Choir','HMU1305'],['Computer Science Principles','HCT2610'],['Teacher Assistant','HTA9001']];
+/* Infinite Campus HS credit types (CurriculumStandard, "APS HS Subject Area"), from CR-14.
+   Completed courses: TranscriptCredit.standardID. Scheduled courses: GradingTaskCredit.standardID. */
+const WS_NAMES=['Global Studies','Pre-AP World History','AP Human Geography'];
+const USH_NAMES=['US History','AP US History','Honors US History','Modern US History'];
+const CIV_NAMES=['Civics','American Government','U.S. Government','Law & Government'];
+const CT_NAMES={HCT2201:'Computer Tech',HCT2610:'Computer Tech'};
+function creditType(name,code){
+  const pre=code.slice(0,3),nm=name.replace(' (transfer)','');
+  if(pre==='HLA')return 'Language Arts';if(pre==='HMA')return 'Mathematics';if(pre==='HSC')return 'Science';
+  if(pre==='HSS'){if(WS_NAMES.includes(nm))return 'World Studies';if(USH_NAMES.includes(nm))return 'U.S. History';if(CIV_NAMES.includes(nm))return 'Civics';return 'Social Science'}
+  if(pre==='HFL')return 'World Language';
+  if(pre==='HAR'||pre==='HMU')return 'Fine Arts';
+  if(pre==='HPE')return 'Physical Education';
+  if(pre==='HHE')return 'Health';
+  if(CT_NAMES[code])return 'Computer Tech';
+  return 'Elective';
+}
+const REQ_ORDER=['Language Arts','Mathematics','Science','World Studies','U.S. History','Civics','Social Science','World Language','Computer Tech','Fine Arts','Physical Education','Health','Elective'];
+const SS_SEM=['Economics','Psychology','Sociology','Latin American History','African-American Studies','Financial Literacy'];
+const BASE={9:{eng:'English 9',math:'Integrated Math 1',sci:'Biology',ss:'Global Studies',wl:'Spanish 1',pair:['Physical Education','Health']},
+ 10:{eng:'English 10',math:'Integrated Math 2',sci:'Chemistry',ss:'US History',wl:'Spanish 2',pair:['Art Elective I','Health & Activity for Life']},
+ 11:{eng:'English 11',math:'Integrated Math 3',sci:'Physics',ss:null,wl:'Spanish 3',pair:['Civics','SS_SEM']},
+ 12:{eng:'English 12',math:'Financial Algebra',sci:'Environmental Science',ss:null,wl:null,pair:['Economics','Financial Literacy']}};
+const LET=(strong)=>{const r=R2();return strong?(r<.3?'A':r<.65?'B':r<.9?'C':'D'):(r<.08?'A':r<.3?'B':r<.7?'C':'D')};
+function qPositions(needed,q0){ /* quarters the course runs in */
+  if(needed===1)return [1,2,3,4];
+  return q0<=2?[1,2]:[3,4];
+}
+function buildTranscript(s){
+  const rows=[];if(s.grade==='09')return rows;
+  const g=+s.grade,yb=g-9,startY=2027-yb,strong=!s.fs.length;
+  const fByName=Object.fromEntries(s.fs.map(f=>[f.c.name,f]));
+  let tookSpanish=false;
+  for(let y=startY;y<=2026;y++){
+    const gl=9+(y-startY),b=BASE[gl];
+    const list=[];
+    const addReq=nm=>{const f=fByName[nm];if(f&&f.fYear!==y)return false;list.push(nm);return true};
+    addReq(b.eng);addReq(b.math);if(b.sci)addReq(b.sci);if(b.ss)addReq(b.ss);
+    const vista=s.sc.id===73;
+    if(gl===9){if(R2()<(vista?.55:.3)){addReq('Spanish 1');tookSpanish=true}}
+    else if(gl===10){if(R2()<.85){addReq(tookSpanish?'Spanish 2':'Spanish 1');tookSpanish=true}}
+    else if(gl===11&&tookSpanish&&R2()<(vista?.8:.3))addReq('Spanish 3');
+    for(const nm of b.pair)addReq(nm==='SS_SEM'?(s.ssSem=s.ssSem||p2(SS_SEM)):nm);
+    for(const f of s.fs)if(f.fYear===y&&!list.includes(f.c.name))list.push(f.c.name);
+    let slots=list.reduce((t,nm)=>t+(COURSE_BY_NAME[nm].needed===1?1:.5),0);
+    const target=R2()<.08?6:7;const usedE=new Set();
+    while(slots<target){const e=p2(ELECTIVES);if(usedE.has(e[0]))continue;usedE.add(e[0]);list.push(e);slots++}
+    for(const item of list){
+      if(Array.isArray(item)){ /* non-required elective */
+        const qs=[1,2,3,4].map(()=>R2()<(strong?.01:.07)?'F':LET(strong));
+        rows.push({y,ylab:yl(y),name:item[0],code:item[1],type:creditType(item[0],item[1]),needed:1,qs,earned:.25*qs.filter(q=>q!=='F').length,elective:true});
+        continue;
+      }
+      const c=COURSE_BY_NAME[item],f=fByName[item]&&fByName[item].fYear===y?fByName[item]:null;
+      const q0=f?+f.fQ.slice(1):(c.needed===1?1:(list.indexOf(item)%2?3:1));
+      const pos=qPositions(c.needed,q0);const qs=[null,null,null,null];
+      for(const q of pos)qs[q-1]=LET(strong);
+      if(f){for(let i=0;i<f.nf;i++){const q=q0+i;if(pos.includes(q))qs[q-1]='F'}}
+      const earned=.25*qs.filter(q=>q&&q!=='F').length;let other='';
+      /* Synthetic posting styles, mirroring TranscriptCourse.gradingTaskCode: most courses post Q1–Q4; some post S1/S2 or one Final */
+      if(!f){
+        const lotus=s.sc.id===52,vista=s.sc.id===73;
+        if(c.needed===1&&vista&&R2()<.3){other=`Final: ${qs[3]}`;qs.fill(null)}
+        else if(c.needed===1&&lotus&&R2()<.5){other=`S1: ${qs[1]}, S2: ${qs[3]}`;qs.fill(null)}
+        else if(c.needed===.5&&(lotus||R2()<.2)){const q=qs.findIndex(x=>x);other=`${q<2?'S1':'S2'}: ${qs[q+1]||qs[q]}`;qs.fill(null)}
+      }
+      rows.push({y,ylab:yl(y),name:c.name,code:c.reg,type:creditType(c.name,c.reg),needed:c.needed,qs,earned,f,other});
+    }
   }
-  const base=yd*6.75+(R()-0.5)*0.5;
-  s.credStart=Math.round((base-elect-outStart)*4)/4;
-  s.credNow=s.credStart+recNow;
-  s.expected=EXPECT[s.grade];
+  /* recovery rows */
+  for(const f of s.fs){
+    const failed=[];const q0=+f.fQ.slice(1);for(let i=0;i<f.nf;i++)failed.push(q0+i);
+    const mk=(y,ylab,code,name,credit,sort)=>{const qs=[null,null,null,null];let left=credit;for(const q of failed){if(left<=0)break;qs[q-1]=LET(false)==='D'?'C':LET(false);left-=.25}
+      rows.push({y:sort||y,ylab,name,code,type:creditType(f.c.name,f.c.reg),needed:f.needed,qs,earned:credit,rec:f})};
+    const owed=f.needed-f.orig;
+    if(f.k==='recOCR')mk(f.recYear,yl(f.recYear),f.c.ocr,f.c.name,owed);
+    else if(f.k==='summer')mk(f.fYear,'Summer '+f.fYear,f.c.reg+'SM',f.c.name,owed,f.fYear+.5);
+    else if(f.k==='retake')mk(f.recYear,yl(f.recYear),f.c.reg,f.c.name,owed);
+    else if(f.k==='transfer'){mk(f.fYear,yl(f.fYear),'HTR'+f.c.reg.slice(3),f.c.name+' (transfer)',owed,f.fYear+.6);const tr=rows[rows.length-1];tr.qs=[null,null,null,null];tr.other='Transfer: '+p2(TRANSFER_SCHOOLS)+' (P)'}
+    else if(f.k==='partial'){f.partYear=r2i(f.fYear,2026);mk(f.partYear,yl(f.partYear),f.c.ocr||f.c.reg,f.c.name,f.earned-f.orig)}
+  }
+  rows.sort((a,b)=>a.y-b.y||(a.rec?1:0)-(b.rec?1:0)||a.name.localeCompare(b.name));
+  return rows;
+}
+
+/* Graduation programs (CreditRequirement, program-level rows, CR-14 3b). */
+const STD_REQ={'Language Arts':4,'Mathematics':4,'Science':3,'World Studies':1,'U.S. History':1,'Civics':.5,'Social Science':.5,'World Language':1,'Elective':7};
+const PROGRAMS={
+ 42:{name:'HS Diploma-Class of 2015 & Beyond',legacy:true},
+ 49:{name:'VPHS Diploma',legacy:true},
+ 71:{name:'HS Diploma-Class of 2027',req:STD_REQ},
+ 72:{name:'HS Diploma-Class of 2028 & Beyond',req:STD_REQ},
+ 73:{name:'VPHS Diploma-Class of 2027',req:{...STD_REQ,'World Language':2,'Elective':6}},
+ 64:{name:'Lotus Diploma 2023 & Beyond',req:{'Language Arts':4,'Mathematics':4,'Science':3,'U.S. History':1,'Civics':.5,'Social Science':1.5,'World Language':2,'Computer Tech':1,'Fine Arts':1,'Physical Education':1,'Health':.5,'Elective':3.5}}
+};
+/* Option B: requirements come from the student's grade cohort, not the assigned program. */
+function cohortProgram(s){if(s.sc.id===52)return 64;if(s.grade==='12')return s.sc.id===73?73:71;return 72}
+function bucketOf(prog,ct){return PROGRAMS[prog].req[ct]!==undefined?ct:'Elective'}
+
+/* Cumulative pace (accountabilityDW.dbo.CreditRequirementByQuarter2027), district rows + the Vista PEAK variant.
+   Two fixes applied: grade 12 World Studies carried forward as 1 (the table has 0, but its Total counts it),
+   and grade 12 "Before Q1" set to grade 11 Q4 (the table has Social Science 0 and Total 16.5). */
+const PACE_COLS=['Language Arts','Mathematics','Science','Elective','World Language','U.S. History','Civics','Social Science','World Studies','Total'];
+const PACE_DISTRICT={
+ '09':{'Before Q1':[0,0,0,0,0,0,0,0,0,0],'1':[.25,.25,.25,.5,0,0,0,0,.25,1.5],'2':[.5,.5,.5,1,0,0,0,0,.5,3],'3':[.75,.75,.75,1.5,0,0,0,0,.75,4.5],'4':[1,1,1,2,0,0,0,0,1,6]},
+ '10':{'Before Q1':[1,1,1,2,0,0,0,0,1,6],'1':[1.25,1.25,1.25,2.25,.25,.25,0,0,1,7.5],'2':[1.5,1.5,1.5,2.5,.5,.5,0,0,1,9],'3':[1.75,1.75,1.75,2.75,.75,.75,0,0,1,10.5],'4':[2,2,2,3,1,1,0,0,1,12]},
+ '11':{'Before Q1':[2,2,2,3,1,1,0,0,1,12],'1':[2.25,2.25,2.25,3.25,1,1,0,0,1,13.25],'2':[2.5,2.5,2.5,3.5,1,1,0,0,1,14.5],'3':[2.75,2.75,2.75,3.75,1,1,.25,.25,1,15.75],'4':[3,3,3,4,1,1,.5,.5,1,17]},
+ '12':{'Before Q1':[3,3,3,4,1,1,.5,0,1,16.5],'1':[3.25,3.25,3,4.75,1,1,.5,.5,0,18.25],'2':[3.5,3.5,3,5.5,1,1,.5,.5,0,19.5],'3':[3.75,3.75,3,6.25,1,1,.5,.5,0,20.75],'4':[4,4,3,7,1,1,.5,.5,0,22]}
+};
+const PACE_VISTA_OVR={
+ '11':{'1':[2.25,2.25,2.25,3.25,1.25,1,0,0,1,13.5],'2':[2.5,2.5,2.5,3.5,1.5,1,0,0,1,15],'3':[2.75,2.75,2.75,3.75,1.75,1,.25,.25,1,16.5],'4':[3,3,3,4,2,1,.5,.5,1,18]},
+ '12':{'1':[3.25,3.25,3,4.75,2,1,.5,.5,0,19.25],'2':[3.5,3.5,3,5.5,2,1,.5,.5,0,20.5],'3':[3.75,3.75,3,6,2,1,.5,.5,0,21.5],'4':[4,4,3,6,2,1,.5,.5,0,22]}
+};
+function buildPace(ovr){
+  const P=JSON.parse(JSON.stringify(PACE_DISTRICT));
+  for(const g in ovr)for(const q in ovr[g])P[g][q]=ovr[g][q].slice();
+  const ws=PACE_COLS.indexOf('World Studies');
+  for(const q of ['1','2','3','4'])P['12'][q][ws]=1;              /* fix 1 */
+  P['12']['Before Q1']=P['11']['4'].slice();                        /* fix 2 */
+  return P;
+}
+const PACE={district:buildPace({}),vista:buildPace(PACE_VISTA_OVR)};
+const CUR_Q='Before Q1';   /* Q1 grades haven't posted (week 7); moves to '1' once they do */
+function paceOf(s){return s.sc.id===73?PACE.vista:PACE.district}  /* Avenues and Vanguard use the district rows */
+function paceVal(s,col,q){const i=PACE_COLS.indexOf(col);if(i<0)return null;return paceOf(s)[s.grade][q][i]}
+
+/* Current 2026-27 schedule (active trial). Q1 shows the in-progress grade. */
+function buildSchedule(s){
+  const gl=+s.grade,b=BASE[gl],rows=[],strong=!s.fs.length,vista=s.sc.id===73;
+  const names=[b.eng,b.math];
+  if(b.sci&&(gl<12||R2()<.4))names.push(b.sci);if(b.ss)names.push(b.ss);
+  const hadWL=s.tx.some(r=>r.type==='World Language'&&r.earned>0);
+  if(gl===9&&R2()<(vista?.55:.3))names.push('Spanish 1');
+  else if(gl===10&&!hadWL&&R2()<.9)names.push('Spanish 1');
+  else if(gl===10&&hadWL&&R2()<.5)names.push('Spanish 2');
+  else if(gl===11&&vista&&R2()<.8)names.push(hadWL?'Spanish 2':'Spanish 1');
+  for(const nm of b.pair)names.push(nm==='SS_SEM'?(s.ssSem=s.ssSem||p2(SS_SEM)):nm);
+  const ubrBy=Object.fromEntries(s.ubr.map(u=>[u.course,u]));
+  let slots=names.reduce((t,nm)=>t+(COURSE_BY_NAME[nm].needed===1?1:.5),0);
+  for(const nm of names){
+    const c=COURSE_BY_NAME[nm],u=ubrBy[nm];
+    const pos=qPositions(c.needed,c.needed===1?1:(b.pair.indexOf(nm)===1?3:1));
+    const qs=[null,null,null,null];
+    if(pos[0]===1)qs[0]=u?u.letter:LET(strong);
+    rows.push({y:2027.5,ylab:'2026-27',name:c.name,code:c.reg,type:creditType(c.name,c.reg),needed:c.needed,qs,earned:0,schedCr:c.needed,sched:true,qpos:pos,ubr:u});
+  }
+  for(const f of s.fs){
+    if(f.k!=='ipOCR'&&f.k!=='ipRetake')continue;
+    const qs=[null,null,null,null];qs[0]=f.k==='ipOCR'?null:LET(false);
+    rows.push({y:2027.6,ylab:'2026-27',name:f.c.name,code:f.k==='ipOCR'?f.c.ocr:f.c.reg,type:creditType(f.c.name,f.c.reg),needed:f.needed,qs,earned:0,
+      schedCr:f.needed-f.earned,sched:true,rec:f,qpos:f.k==='ipOCR'?[]:[1,2,3,4],period:f.k==='ipOCR'?'CreditRec':''});
+    slots+=f.k==='ipOCR'?0:1;
+  }
+  const usedE=new Set();const target=R2()<.1?6:7;
+  while(slots<target){const e=p2(ELECTIVES);if(usedE.has(e[0]))continue;usedE.add(e[0]);
+    rows.push({y:2027.5,ylab:'2026-27',name:e[0],code:e[1],type:creditType(e[0],e[1]),needed:1,qs:[LET(strong),null,null,null],earned:0,schedCr:1,sched:true,qpos:[1,2,3,4],elective:true});slots++}
+  return rows;
+}
+
+/* Graduation on-track: transcript credits vs the pace table's Total for the student's grade.
+   "Started off track" and "now" both use Before Q1 until Q1 grades post. Lotus has no pace rows: district Total. */
+const BYID={};
+for(const s of ALL){
+  BYID[s.id]=s;
+  s.prog=cohortProgram(s);
+  s.assigned=s.sc.id===52?64:s.grade==='12'?(s.sc.id===73?(R2()<.15?49:73):(R2()<.44?42:71)):(R2()<.037?42:72);
+  if(s.assigned!==s.prog)s.audit.push({chk:'C',s,course:'Graduation program',code:'',detail:`Assigned: ${PROGRAMS[s.assigned].name}. Expected for the ${s.grade==='12'?'Class of 2027':'Class of 2028 & beyond'}: ${PROGRAMS[s.prog].name}`});
+  s.tx=buildTranscript(s);
+  s.sched=buildSchedule(s);
+  s.openF=s.fs.filter(f=>f.group!=='Recovered').length;
+  if(s.grade==='09'){s.onTrack=true;s.otElig=false;s.credStart=0;s.credNow=0;continue}
+  s.otElig=true;
+  s.credStart=s.tx.filter(r=>r.y<2027).reduce((t,r)=>t+r.earned,0);
+  s.credNow=s.tx.reduce((t,r)=>t+r.earned,0);
+  s.expected=paceVal(s,'Total',CUR_Q);
   s.onTrack=s.credNow>=s.expected;
   s.startedOff=s.credStart<s.expected;
-  s.openF=s.fs.filter(f=>f.group!=='Recovered').length;
 }
 
 const CHECKS=[
@@ -394,7 +563,8 @@ const CHECKS=[
  {id:'6',label:'Recovered, no CR tab record',owner:'CR coordinator'},
  {id:'7',label:'Required F, no CR tab record',owner:'Counselor'},
  {id:'A',label:'Tab "Yes", credit not recovered',owner:'CR coordinator'},
- {id:'B',label:'Tab record, no transcript F',owner:'CR coordinator'}
+ {id:'B',label:'Tab record, no transcript F',owner:'CR coordinator'},
+ {id:'C',label:'Program doesn\'t match cohort',owner:'Counselor'}
 ];
 const CHECK_BY_ID=Object.fromEntries(CHECKS.map(c=>[c.id,c]));
 const GROUPS=['Recovered','In progress','Partial credit','Not scheduled'];
@@ -403,12 +573,13 @@ const GHEX={'Recovered':'#00877C','In progress':'#8CCBC4','Partial credit':'#F6D
 const GTEXT={'Recovered':'#FFFFFF','In progress':'#10302D','Partial credit':'#3A2A00','Not scheduled':'#221400'};
 
 /* ============================ State ============================ */
-const TABS=[['district','District Summary'],['school','School Overview'],['flist','Student F List'],['ubr',"UBR: Current F's"],['audit','Audit Exceptions'],['ontrack','Graduation On-Track']];
+const TABS=[['district','District Summary'],['school','School Overview'],['flist','Student F List'],['ubr',"UBR: Current F's"],['audit','Audit Exceptions'],['ontrack','Graduation Off-Track'],['student','Student One-Pager']];
 function defaults(){return{tab:'district',school:'(All)',counselor:'(All)',grade:'(All)',info:false,
   fl:{status:new Set(['In progress','Partial credit','Not scheduled']),course:'(All)',subject:'(All)',fyear:'(All)',sort:{key:'counselor',dir:1}},
   ubr:{subject:'(All)',teacher:'(All)',ap:'Include',eld:'Include'},
   au:{sid:null,chk:null,owner:'(All)'},
-  ot:{status:'(All)',sid:null,g:null}}}
+  ot:{status:'(All)',sid:null,g:null},
+  sp:{stu:null,onlyF:'Yes'}}}
 let S=defaults();
 
 /* ============================ Helpers ============================ */
@@ -454,6 +625,14 @@ function ban(label,value,sub,tipLines,ph){return `<div class="ban" ${tipLines?ti
 function bans(items){return `<div class="bans" style="grid-template-columns:repeat(${items.length},1fr)">${items.join('')}</div>`}
 function statusCell(g,label){return `<span class="sq" style="background:${GCOLOR[g]}"></span>${esc(label)}`}
 function go(tab){S.tab=tab;window.scrollTo({top:0})}
+/* Tableau text-table rule used everywhere: dimension columns (row headers) are plain text and come first;
+   measure columns (marks) come after and carry at most ONE color encoding (cell background from a calc). */
+const CELL={lred:'#F6C6CB',red:'#E06A75',lav:'#E7E1F4',lteal:'#C9E7E3',pteal:'#E4F3F1',lorange:'#FBE3AE',orange:'#F5C26B',dorange:'#EE9F3C'};
+const GTINT={'Recovered':'#C9E7E3','In progress':'#E4F3F1','Partial credit':'#FBEBC5','Not scheduled':'#F8D3A3'};
+function mk(html,bg,opt={}){return `<td class="${opt.text?'':'num'}${bg?' mk':''}" style="${bg?`background:${bg};`:''}${opt.wrap?'white-space:normal;min-width:'+opt.wrap+'px;':''}" ${opt.tip||''}>${html}</td>`}
+const band=(v,lo,hi)=>!v?'':v>=hi?CELL.dorange:v>=lo?CELL.orange:CELL.lorange;
+function openPager(s){S.sp.stu=s.id;if(!s.fs.length)S.sp.onlyF='No';go('student')}
+const pagerMenu=s=>menu([['Student',s.name+' ('+s.id+')'],['School',s.sc.short]],[['Open student one-pager',()=>openPager(s)]]);
 
 /* ============================ Filter pane ============================ */
 function selCard(label,key,opts,val){
@@ -488,22 +667,20 @@ function rDistrict(){
       [['Source','Current Q1 grades (posted, else in progress)'],['Include AP',S.ubr.ap],['Include ELD',S.ubr.eld]]),
     ban('Open CR tab records correctly scheduled',pct(m.tabSched,m.tabOpen),`${fmt(m.labOnly)} in Lab, not CreditRec. ${fmt(m.crOnly)} in CreditRec, not Lab`,
       [['Open records this year (Completed = No)',fmt(m.tabOpen)],['OCR course in the CreditRec period',fmt(m.tabSched)]]),
-    ban('Grades 10–12 on track to graduate',pct(m.ot,m.otElig),`${fmt(m.backOn)} started the year off track and are back on track`,
-      [['On track',fmt(m.ot)],['Grades 10–12',fmt(m.otElig)],['Still off track',fmt(m.stillOff)]])
+    ban('Grades 10–12 off track by credits',pct(m.otElig-m.ot,m.otElig),`${fmt(m.otElig-m.ot)} of ${fmt(m.otElig)} students`,
+      [['Off track',fmt(m.otElig-m.ot)],['Grades 10–12',fmt(m.otElig)],['Back on track this year (not listed)',fmt(m.backOn)]])
   ]);
   const rows=[];const tot={stu:0,fStu:0,addr:0,f:0,rec:0,ip:0,notAddr:0,ocrY:0,lab:0,cr:0,labOnly:0,crOnly:0,audit:0};
   for(const sc of SCHOOLS){
     const sl=list.filter(s=>s.sc===sc);if(!sl.length)continue;
     const x=metrics(sl);for(const k in tot)tot[k]+=x[k];
     const p=pctN(x.addr,x.fStu);
-    const mm=v=>v?`style="background:${hexA('#F2A900',Math.min(.75,.15+v/150))}"`:'';
+
     rows.push(`<tr class="click" tabindex="0" ${menu([['School',sc.name],['Students with a required F',fmt(x.fStu)],['Every F addressed',pct(x.addr,x.fStu)],['Audit exceptions',fmt(x.audit)]],
       [['Go to School Overview',()=>{S.school=sc.name;S.counselor='(All)';go('school')}],['Go to Student F List',()=>{S.school=sc.name;S.counselor='(All)';go('flist')}],['Go to Audit Exceptions',()=>{S.school=sc.name;S.counselor='(All)';S.au.sid=null;S.au.chk=null;go('audit')}]])}>
-      <td>${esc(sc.short)}</td><td class="num">${fmt(x.stu)}</td><td class="num">${fmt(x.fStu)}</td>
-      <td class="num" style="color:${p<40?'#B35F00':'var(--text)'};font-weight:600">${pct(x.addr,x.fStu)}</td>
-      <td class="num">${fmt(x.f)}</td><td class="num">${fmt(x.rec)}</td><td class="num">${fmt(x.ip)}</td><td class="num">${fmt(x.notAddr)}</td>
-      <td class="num">${fmt(x.ocrY)}</td><td class="num">${fmt(x.lab)}</td><td class="num">${fmt(x.cr)}</td>
-      <td class="num" ${mm(x.labOnly)}>${fmt(x.labOnly)}</td><td class="num" ${mm(x.crOnly)}>${fmt(x.crOnly)}</td><td class="num">${fmt(x.audit)}</td></tr>`);
+      <td>${esc(sc.short)}</td>${mk(fmt(x.stu))}${mk(fmt(x.fStu))}${mk(pct(x.addr,x.fStu),p<40?CELL.lorange:'')}
+      ${mk(fmt(x.f))}${mk(fmt(x.rec))}${mk(fmt(x.ip))}${mk(fmt(x.notAddr))}${mk(fmt(x.ocrY))}${mk(fmt(x.lab))}${mk(fmt(x.cr))}
+      ${mk(fmt(x.labOnly),band(x.labOnly,25,75))}${mk(fmt(x.crOnly),band(x.crOnly,25,75))}${mk(fmt(x.audit))}</tr>`);
   }
   const table=`<div class="scroll"><table class="tbl"><thead><tr><th>School</th><th class="num">Students</th><th class="num">Students with a required F</th><th class="num">Every F addressed</th>
     <th class="num">Required F's</th><th class="num">Recovered</th><th class="num">In progress</th><th class="num">Not addressed</th><th class="num">OCR completions this year</th>
@@ -511,7 +688,7 @@ function rDistrict(){
     <tbody>${rows.join('')}</tbody><tfoot><tr class="total"><td>Grand total</td><td class="num">${fmt(tot.stu)}</td><td class="num">${fmt(tot.fStu)}</td><td class="num">${pct(tot.addr,tot.fStu)}</td>
     <td class="num">${fmt(tot.f)}</td><td class="num">${fmt(tot.rec)}</td><td class="num">${fmt(tot.ip)}</td><td class="num">${fmt(tot.notAddr)}</td><td class="num">${fmt(tot.ocrY)}</td>
     <td class="num">${fmt(tot.lab)}</td><td class="num">${fmt(tot.cr)}</td><td class="num">${fmt(tot.labOnly)}</td><td class="num">${fmt(tot.crOnly)}</td><td class="num">${fmt(tot.audit)}</td></tr></tfoot></table></div>`;
-  return top+`<div class="ws-title">Schools <span class="note">Click a school for actions</span></div>`+table+
+  return top+`<div class="ws-title">Schools <span class="note">Click a school for actions. Orange = under 40% addressed, or Lab/CreditRec mismatches (1–24, 25–74, 75+)</span></div>`+table+
     `<div class="ws-title">Outcome of required F's by school <span class="note">Share of each school's F's</span></div>`+stackBars(list);
 }
 function stackBars(list){
@@ -538,10 +715,10 @@ function rSchool(){
   const byC={};
   for(const s of list)for(const f of s.fs){const k=f.c.name;(byC[k]=byC[k]||{c:f.c,n:0,g:Object.fromEntries(GROUPS.map(g=>[g,0]))});byC[k].n++;byC[k].g[f.group]++}
   const crs=Object.values(byC).sort((a,b)=>b.n-a.n);
-  const max=Object.fromEntries(GROUPS.map(g=>[g,Math.max(1,...crs.map(x=>x.g[g]))]));
+  const sb=(g,v)=>!v?'':hexA(GHEX[g],v>=50?.6:v>=10?.35:.15);
   const ctab=`<div class="scroll" style="max-height:470px"><table class="tbl"><thead><tr><th>Course</th><th>Subject</th>${GROUPS.map(g=>`<th class="num">${g}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${
     crs.map(x=>`<tr class="click" tabindex="0" ${menu([['Course',x.c.name],["Required F's",fmt(x.n)],['Not scheduled',fmt(x.g['Not scheduled'])]],[["Show these F's in the Student F List",()=>{S.fl.course=x.c.name;S.fl.subject='(All)';go('flist')}]])}>
-      <td>${esc(x.c.name)}</td><td class="mut">${esc(x.c.subj)}</td>${GROUPS.map(g=>`<td class="num" style="background:${hexA(GHEX[g],0.08+0.62*x.g[g]/max[g])}">${fmt(x.g[g])}</td>`).join('')}<td class="num"><b>${fmt(x.n)}</b></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No F\'s match these filters.</td></tr>'
+      <td>${esc(x.c.name)}</td><td>${esc(x.c.subj)}</td>${GROUPS.map(g=>mk(fmt(x.g[g]),sb(g,x.g[g]))).join('')}${mk(fmt(x.n))}</tr>`).join('')||'<tr><td colspan="7" class="empty">No F\'s match these filters.</td></tr>'
   }</tbody></table></div>`;
   const byK={};
   for(const s of list){const k=s.counselor;const o=byK[k]=byK[k]||{k,sc:s.sc,case:0,openStu:0,notAddr:0,noTab:0,audit:0,ip:0};
@@ -549,21 +726,19 @@ function rSchool(){
     for(const f of s.fs){if(f.group==='Partial credit'||f.group==='Not scheduled'){o.notAddr++;open=true}if(f.group==='In progress')o.ip++;if(f.group!=='Recovered'&&f.tab==='None')o.noTab++}
     if(open)o.openStu++}
   const ks=Object.values(byK).sort((a,b)=>b.notAddr-a.notAddr);
-  const kmax=Math.max(1,...ks.map(o=>o.notAddr));
   const ktab=`<div class="scroll" style="max-height:470px"><table class="tbl"><thead><tr><th>Counselor</th>${S.school==='(All)'?'<th>School</th>':''}<th class="num">Caseload</th><th class="num">Students with F's not addressed</th><th class="num">F's not addressed</th><th class="num">F's in progress</th><th class="num">F's not on CR tab</th></tr></thead><tbody>${
     ks.map(o=>`<tr class="click" tabindex="0" ${menu([['Counselor',o.k],['Caseload',fmt(o.case)],["F's not addressed",fmt(o.notAddr)]],[['Show caseload in the Student F List',()=>{S.school=o.sc.name;S.counselor=o.k;go('flist')}],['Show caseload in Audit Exceptions',()=>{S.school=o.sc.name;S.counselor=o.k;go('audit')}]])}>
-      <td>${esc(o.k)}</td>${S.school==='(All)'?`<td class="mut">${esc(o.sc.short)}</td>`:''}<td class="num">${fmt(o.case)}</td><td class="num">${fmt(o.openStu)}</td>
-      <td class="num" style="background:${hexA('#E08A00',0.08+0.55*o.notAddr/kmax)}">${fmt(o.notAddr)}</td><td class="num">${fmt(o.ip)}</td><td class="num">${fmt(o.noTab)}</td></tr>`).join('')
+      <td>${esc(o.k)}</td>${S.school==='(All)'?`<td>${esc(o.sc.short)}</td>`:''}${mk(fmt(o.case))}${mk(fmt(o.openStu))}${mk(fmt(o.notAddr),band(o.notAddr,50,150))}${mk(fmt(o.ip))}${mk(fmt(o.noTab))}</tr>`).join('')
   }</tbody></table></div>`;
   const hint=S.school==='(All)'?`<div class="cap" style="margin-bottom:6px">Showing all schools. Pick one school in the School filter to see a single school.</div>`:'';
-  return hint+top+`<div class="cols" style="grid-template-columns:1.15fr 1fr"><div><div class="ws-title">Outcome by course <span class="note">Click a course for actions</span></div>${ctab}</div>
+  return hint+top+`<div class="cols" style="grid-template-columns:1.15fr 1fr"><div><div class="ws-title">Outcome by course <span class="note">Click a course for actions. Shade bands: 1–9, 10–49, 50+</span></div>${ctab}</div>
     <div><div class="ws-title">Counselors <span class="note">Click a counselor for actions</span></div>${ktab}</div></div>`;
 }
 
 const FL_COLS=[
  ['Student',f=>f.s.name],['Student ID',f=>f.s.id],['Gr',f=>f.s.grade],['Counselor',f=>f.s.counselor],['Course',f=>f.c.name],['Course #',f=>f.c.reg],
- ['F year',f=>f.fYear],['F qtr',f=>f.fQ],['Credit needed',f=>f.needed,1],['Credit earned',f=>f.earned,1],['Outstanding',f=>f.needed-f.earned,1],
- ['Status',f=>f.status],['Scheduled now',f=>f.sched],['Edgenuity Lab',f=>f.s.lab?'Y':'N'],['CR tab',f=>f.tab],['Next step',f=>nextStep(f)]
+ ['F year',f=>f.fYear],['F qtr',f=>f.fQ],['Status',f=>f.status],['Scheduled now',f=>f.sched],['Edgenuity Lab',f=>f.s.lab?'Y':'N'],['CR tab',f=>f.tab],['Next step',f=>nextStep(f)],
+ ['Credit needed',f=>f.needed,1],['Credit earned',f=>f.earned,1],['Outstanding',f=>f.needed-f.earned,1]
 ];
 function flRows(){
   return students().flatMap(s=>s.fs).filter(f=>S.fl.status.has(f.group)&&(S.fl.course==='(All)'||f.c.name===S.fl.course)&&(S.fl.subject==='(All)'||f.c.subj===S.fl.subject)&&(S.fl.fyear==='(All)'||yl(f.fYear)===S.fl.fyear));
@@ -574,19 +749,18 @@ function rFList(){
   rows.sort((a,b)=>{const x=col[1](a),y=col[1](b);return (x<y?-1:x>y?1:0)*dir||a.s.name.localeCompare(b.s.name)||a.fYear-b.fYear});
   const nStu=new Set(rows.map(f=>f.s)).size;const LIM=500;
   const head=FL_COLS.map(([k,,n])=>`<th class="sortable${n?' num':''}" ${act(()=>{S.fl.sort=S.fl.sort.key===k?{key:k,dir:-S.fl.sort.dir}:{key:k,dir:1}})}>${esc(k)}${S.fl.sort.key===k?`<span class="arr">${S.fl.sort.dir>0?'▲':'▼'}</span>`:''}</th>`).join('');
-  const body=rows.slice(0,LIM).map(f=>{const ns=nextStep(f);return `<tr ${tip([['Student',f.s.name+' ('+f.s.id+')'],['School',f.s.sc.short],['Course',f.c.name+(f.c.ocr?' (OCR '+f.c.ocr+')':' (no OCR course)')],['F',`${yl(f.fYear)} ${f.fQ}, ${f.nf} quarter(s) failed`],['Status',f.status+(f.recYear?' '+yl(f.recYear):'')],['CR tab',f.tab+(f.tabYear?' (entered '+yl(f.tabYear)+')':'')]])}>
-    <td>${esc(f.s.name)}</td><td>${f.s.id}</td><td>${f.s.grade}</td><td>${esc(f.s.counselor)}</td><td>${esc(f.c.name)}</td><td class="mut">${f.c.reg}</td>
-    <td>${yl(f.fYear)}</td><td>${f.fQ}</td><td class="num">${fmtC(f.needed)}</td><td class="num">${fmtC(f.earned)}</td><td class="num">${fmtC(f.needed-f.earned)}</td>
-    <td>${statusCell(f.group,f.status)}</td><td>${f.sched}</td><td>${f.s.lab?'Y':'N'}</td><td>${f.tab==='None'?'<span class="warn">None</span>':f.tab}</td>
-    <td class="${ns==='None'||ns==='Monitor progress'?'mut':'warn'}">${esc(ns)}</td></tr>`}).join('');
-  return `<div class="ws-title">Student F list <span class="note">${fmt(rows.length)} F's for ${fmt(nStu)} students${rows.length>LIM?`. The prototype shows the first ${LIM}; Tableau scrolls the full list`:''}. Click a header to sort</span></div>
+  const body=rows.slice(0,LIM).map(f=>{const ns=nextStep(f);return `<tr class="click" tabindex="0" ${pagerMenu(f.s)} ${tip([['Student',f.s.name+' ('+f.s.id+')'],['School',f.s.sc.short],['Course',f.c.name+(f.c.ocr?' (OCR '+f.c.ocr+')':' (no OCR course)')],['F',`${yl(f.fYear)} ${f.fQ}, ${f.nf} quarter(s) failed`],['Status',f.status+(f.recYear?' '+yl(f.recYear):'')],['CR tab',f.tab+(f.tabYear?' (entered '+yl(f.tabYear)+')':'')]])}>
+    <td>${esc(f.s.name)}</td><td>${f.s.id}</td><td>${f.s.grade}</td><td>${esc(f.s.counselor)}</td><td>${esc(f.c.name)}</td><td>${f.c.reg}</td>
+    <td>${yl(f.fYear)}</td><td>${f.fQ}</td><td>${esc(f.status)}</td><td>${f.sched}</td><td>${f.s.lab?'Y':'N'}</td><td>${f.tab}</td><td>${esc(ns)}</td>
+    ${mk(fmtC(f.needed),GTINT[f.group])}${mk(fmtC(f.earned),GTINT[f.group])}${mk(fmtC(f.needed-f.earned),GTINT[f.group])}</tr>`}).join('');
+  return `<div class="ws-title">Student F list <span class="note">${fmt(rows.length)} F's for ${fmt(nStu)} students${rows.length>LIM?`. The prototype shows the first ${LIM}; Tableau scrolls the full list`:''}. Credit columns are shaded by status. Click a column label to sort, or a row to open the student one-pager</span></div>
     <div class="scroll" style="max-height:640px"><table class="tbl"><thead><tr>${head}</tr></thead><tbody>${body||`<tr><td colspan="16" class="empty">No F's match these filters. Add statuses or clear a filter.</td></tr>`}</tbody></table></div>`;
 }
 function paneFList(){
   const subj=['(All)',...[...new Set(COURSES.map(c=>c.subj))]];
   const courses=['(All)',...COURSES.filter(c=>S.fl.subject==='(All)'||c.subj===S.fl.subject).map(c=>c.name)];
   return globalCards()+'<hr>'+checkCard('Status','fl.status',GROUPS,S.fl.status)+selCard('Subject','fl.subject',subj,S.fl.subject)+selCard('Course','fl.course',courses,S.fl.course)+
-    selCard('F school year','fl.fyear',['(All)','2023-24','2024-25','2025-26'],S.fl.fyear);
+    selCard('F school year','fl.fyear',['(All)','2023-24','2024-25','2025-26'],S.fl.fyear)+'<hr>'+legend();
 }
 
 function ubrList(){return students().flatMap(s=>ubrRows(s)).filter(r=>(S.ubr.subject==='(All)'||r.subj===S.ubr.subject)&&(S.ubr.teacher==='(All)'||r.teacher===S.ubr.teacher))}
@@ -602,11 +776,11 @@ function rUBR(){
   const mx=Math.max(1,...bySc.map(x=>x.n));
   const bars=`<div class="bars">${bySc.map(x=>`<div class="brow"><div class="lab">${esc(x.sc.short)}</div><div><div class="hbar" style="width:${100*x.n/mx}%" ${tip([['School',x.sc.short],['Failing eligible courses',fmt(x.n)]])}></div></div><div class="num">${fmt(x.n)}</div></div>`).join('')}</div>`;
   rows.sort((a,b)=>a.s.sc.short.localeCompare(b.s.sc.short)||a.teacher.localeCompare(b.teacher)||+a.period-+b.period||a.s.name.localeCompare(b.s.name));
-  const tbl=`<div class="scroll" style="max-height:430px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>Course #</th><th>Course</th><th>Score</th><th>Term</th><th class="num">Absent (% of minutes)</th><th>Student email</th><th>Section</th><th>Period</th><th>Teacher</th><th>Teacher email</th><th>School</th><th>UBR submitted</th><th>UBR completed</th></tr></thead><tbody>${
+  const tbl=`<div class="scroll" style="max-height:430px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>Course #</th><th>Course</th><th>Score</th><th>Term</th><th>Student email</th><th>Section</th><th>Period</th><th>Teacher</th><th>Teacher email</th><th>School</th><th>UBR submitted</th><th>UBR completed</th><th class="num">Absent (% of minutes)</th></tr></thead><tbody>${
     rows.slice(0,500).map(r=>`<tr ${tip([['Student',r.s.name],['Counselor',r.s.counselor],['Course',r.course+(r.ap?' (AP)':'')+(r.eld?' (ELD)':'')],['Current grade',`${r.letter} (${r.pctScore}%), in progress`],["Open required F's on transcript",fmt(r.s.fs.filter(f=>f.group!=='Recovered').length)]])}>
-      <td>${esc(r.s.name)}</td><td>${r.s.id}</td><td>${r.s.grade}</td><td class="mut">${r.code}</td><td>${esc(r.course)}</td><td><b>${r.letter}</b> <span class="mut">${r.pctScore}%</span></td><td>${r.term}</td>
-      <td class="num" style="background:${r.absent>=20?hexA('#E08A00',.35):r.absent>=10?hexA('#F2A900',.22):'transparent'}">${r.absent}%</td><td class="mut">${esc(r.s.email)}</td><td>${r.section}</td><td>${r.period}</td>
-      <td>${esc(r.teacher)}</td><td class="mut">${esc(r.temail)}</td><td>${esc(r.s.sc.short)}</td><td class="ph">Phase 2</td><td class="ph">Phase 2</td></tr>`).join('')||'<tr><td colspan="16" class="empty">No failing eligible courses match these filters.</td></tr>'
+      <td>${esc(r.s.name)}</td><td>${r.s.id}</td><td>${r.s.grade}</td><td>${r.code}</td><td>${esc(r.course)}</td><td>${r.letter} (${r.pctScore}%)</td><td>${r.term}</td>
+      <td>${esc(r.s.email)}</td><td>${r.section}</td><td>${r.period}</td><td>${esc(r.teacher)}</td><td>${esc(r.temail)}</td><td>${esc(r.s.sc.short)}</td><td>Phase 2</td><td>Phase 2</td>
+      ${mk(r.absent+'%',r.absent>=20?CELL.orange:r.absent>=10?CELL.lorange:'')}</tr>`).join('')||'<tr><td colspan="16" class="empty">No failing eligible courses match these filters.</td></tr>'
   }</tbody></table></div>`;
   return top+`<div class="cols" style="grid-template-columns:1fr"><div><div class="ws-title">Failing UBR-eligible courses by school</div>${bars}</div></div>`+
     `<div class="ws-title">Current F's in UBR-eligible courses <span class="note">${fmt(rows.length)} rows${rows.length>500?'. The prototype shows the first 500':''}</span></div>`+tbl;
@@ -634,7 +808,7 @@ function rAudit(){
   det=det.slice().sort((a,b)=>a.chk.localeCompare(b.chk)||a.s.counselor.localeCompare(b.s.counselor)||a.s.name.localeCompare(b.s.name));
   const selLabel=S.au.chk?`${CHECK_BY_ID[S.au.chk].id}. ${CHECK_BY_ID[S.au.chk].label}${S.au.sid?' at '+SCHOOLS.find(x=>x.id===S.au.sid).short:''}`:'All checks';
   const dtab=`<div class="scroll" style="max-height:380px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>School</th><th>Counselor</th><th>Course</th><th>Course #</th><th>Check</th><th>Detail</th><th>Owner</th></tr></thead><tbody>${
-    det.slice(0,500).map(a=>`<tr><td>${esc(a.s.name)}</td><td>${a.s.id}</td><td>${a.s.grade}</td><td>${esc(a.s.sc.short)}</td><td>${esc(a.s.counselor)}</td><td>${esc(a.course)}</td><td class="mut">${a.code}</td>
+    det.slice(0,500).map(a=>`<tr class="click" tabindex="0" ${pagerMenu(a.s)}><td>${esc(a.s.name)}</td><td>${a.s.id}</td><td>${a.s.grade}</td><td>${esc(a.s.sc.short)}</td><td>${esc(a.s.counselor)}</td><td>${esc(a.course)}</td><td class="mut">${a.code}</td>
       <td>${a.chk}. ${esc(CHECK_BY_ID[a.chk].label)}</td><td style="white-space:normal;min-width:280px">${esc(a.detail)}</td><td>${CHECK_BY_ID[a.chk].owner}</td></tr>`).join('')||'<tr><td colspan="10" class="empty">No exceptions for this selection.</td></tr>'
   }</tbody></table></div>`;
   return `<div class="ws-title">Exceptions by school and check <span class="note">Click a cell or a check header to filter the detail. Click again to clear</span></div>${matrix}
@@ -645,34 +819,140 @@ function paneAudit(){
     `<p class="pnote">Check 2 has no exceptions this year and stays as a guardrail. Checks A and B will shrink once transfer credit and the family review are added.</p>`;
 }
 
+function otBand(short){return short<=1?'0.25–1.00':short<=3?'1.25–3.00':'More than 3.00'}
 function rOnTrack(){
-  const list=students().filter(s=>s.otElig);const m=metrics(list);
+  const elig=students().filter(s=>s.otElig);const off=elig.filter(s=>!s.onTrack);
+  const backOn=elig.filter(s=>s.onTrack&&s.startedOff).length;
+  const avgShort=off.length?off.reduce((t,s)=>t+(s.expected-s.credNow),0)/off.length:0;
   const top=bans([
-    ban('Grades 10–12 on track',pct(m.ot,m.otElig),`${fmt(m.ot)} of ${fmt(m.otElig)} students`),
-    ban('Started the year off track, now on track',fmt(m.backOn),`of ${fmt(m.startOff)} who started off track`),
-    ban('Still off track',fmt(m.stillOff),`${pct(m.stillOff,m.otElig)} of grades 10–12`)
+    ban('Grades 10–12 off track by credits',fmt(off.length),`${pct(off.length,elig.length)} of ${fmt(elig.length)} students in grades 10–12`),
+    ban('Average credits short',fmtC(avgShort),'Among students who are off track'),
+    ban('Off track with a required F not scheduled',fmt(off.filter(s=>s.fs.some(f=>f.group==='Partial credit'||f.group==='Not scheduled')).length),'Recovering those F\'s is the fastest way back'),
+    ban('Back on track this year',fmt(backOn),'Counted only. On-track students are not listed')
   ]);
-  const scs=SCHOOLS.filter(sc=>list.some(s=>s.sc===sc));
+  const scs=SCHOOLS.filter(sc=>elig.some(s=>s.sc===sc));
   const grid=`<div class="bars"><div class="brow" style="grid-template-columns:150px repeat(3,1fr);font-size:11.5px;color:var(--muted)"><div></div><div>Grade 10</div><div>Grade 11</div><div>Grade 12</div></div>${scs.map(sc=>`<div class="brow" style="grid-template-columns:150px repeat(3,1fr)"><div class="lab">${esc(sc.short)}</div>${['10','11','12'].map(g=>{
-      const sl=list.filter(s=>s.sc===sc&&s.grade===g);const on=sl.filter(s=>s.onTrack).length;const p=pctN(on,sl.length);const sel=S.ot.sid===sc.id&&S.ot.g===g;
-      return `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;${sel?'outline:2px solid var(--aps-purple);':''}" ${act(()=>{S.ot=sel?{...S.ot,sid:null,g:null}:{...S.ot,sid:sc.id,g}})} ${tip([['School',sc.short],['Grade',g],['On track',`${fmt(on)} of ${fmt(sl.length)}`],['Click','Filter the student list']])}>
-        <div style="flex:1;height:14px;background:var(--hdr)"><div style="height:100%;width:${p}%;background:${p>=75?'var(--st-rec)':'var(--st-ns)'}"></div></div><span class="num" style="width:44px">${sl.length?Math.round(p)+'%':'–'}</span></div>`}).join('')}</div>`).join('')}</div>`;
-  let sl=list;if(S.ot.sid)sl=sl.filter(s=>s.sc.id===S.ot.sid&&s.grade===S.ot.g);
-  const stat=s=>s.onTrack?(s.startedOff?'Back on track':'On track'):'Off track';
-  if(S.ot.status!=='(All)')sl=sl.filter(s=>stat(s)===S.ot.status);
-  sl=sl.slice().sort((a,b)=>(a.credNow-a.expected)-(b.credNow-b.expected));
-  const tbl=`<div class="scroll" style="max-height:420px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>School</th><th>Counselor</th><th class="num">Credits at start of year</th><th class="num">Credits earned now</th><th class="num">Credits expected (Q1)</th><th class="num">Gap</th><th class="num">Open required F's</th><th>Status</th></tr></thead><tbody>${
-    sl.slice(0,500).map(s=>{const gap=s.credNow-s.expected,st=stat(s);return `<tr><td>${esc(s.name)}</td><td>${s.id}</td><td>${s.grade}</td><td>${esc(s.sc.short)}</td><td>${esc(s.counselor)}</td>
-      <td class="num">${fmtC(s.credStart)}</td><td class="num">${fmtC(s.credNow)}</td><td class="num">${fmtC(s.expected)}</td>
-      <td class="num" style="color:${gap<0?'#B35F00':'var(--text)'};font-weight:600">${gap>=0?'+':''}${fmtC(gap)}</td><td class="num">${s.openF}</td>
-      <td><span class="sq" style="background:${st==='Off track'?'var(--st-ns)':st==='Back on track'?'var(--st-ip)':'var(--st-rec)'}"></span>${st}</td></tr>`}).join('')||'<tr><td colspan="11" class="empty">No students match these filters.</td></tr>'
+      const sl=elig.filter(s=>s.sc===sc&&s.grade===g);const n=sl.filter(s=>!s.onTrack).length;const p=pctN(n,sl.length);const sel=S.ot.sid===sc.id&&S.ot.g===g;
+      return `<div style="display:flex;align-items:center;gap:6px;cursor:pointer;${sel?'outline:2px solid var(--aps-purple);':''}" ${act(()=>{S.ot=sel?{...S.ot,sid:null,g:null}:{...S.ot,sid:sc.id,g}})} ${tip([['School',sc.short],['Grade',g],['Off track',`${fmt(n)} of ${fmt(sl.length)}`],['Click','Filter the student list']])}>
+        <div style="flex:1;height:14px;background:var(--hdr)"><div style="height:100%;width:${p}%;background:var(--st-ns)"></div></div><span class="num" style="width:70px">${fmt(n)} (${sl.length?Math.round(p)+'%':'–'})</span></div>`}).join('')}</div>`).join('')}</div>`;
+  let sl=off;if(S.ot.sid)sl=sl.filter(s=>s.sc.id===S.ot.sid&&s.grade===S.ot.g);
+  if(S.ot.status!=='(All)')sl=sl.filter(s=>otBand(s.expected-s.credNow)===S.ot.status);
+  sl=sl.slice().sort((a,b)=>(b.expected-b.credNow)-(a.expected-a.credNow)||a.name.localeCompare(b.name));
+  const nsF=s=>s.fs.filter(f=>f.group==='Partial credit'||f.group==='Not scheduled').length;
+  const tbl=`<div class="scroll" style="max-height:440px"><table class="tbl"><thead><tr><th>Student</th><th>Student ID</th><th>Gr</th><th>School</th><th>Counselor</th><th>Off track at start of year</th><th class="num">Credits at start of year</th><th class="num">Credits earned now</th><th class="num">Credits expected now</th><th class="num">Credits short</th><th class="num">Open required F's</th><th class="num">Required F's not scheduled</th></tr></thead><tbody>${
+    sl.slice(0,500).map(s=>{const short=s.expected-s.credNow,n=nsF(s);return `<tr class="click" tabindex="0" ${pagerMenu(s)}><td>${esc(s.name)}</td><td>${s.id}</td><td>${s.grade}</td><td>${esc(s.sc.short)}</td><td>${esc(s.counselor)}</td><td>${s.startedOff?'Yes':'No'}</td>
+      ${mk(fmtC(s.credStart))}${mk(fmtC(s.credNow))}${mk(fmtC(s.expected))}${mk(fmtC(short),short>3?CELL.dorange:short>1?CELL.orange:CELL.lorange)}${mk(String(s.openF))}${mk(String(n),n?CELL.red:'')}</tr>`}).join('')||'<tr><td colspan="12" class="empty">No off-track students match these filters.</td></tr>'
   }</tbody></table></div>`;
-  return top+`<div class="ws-title">On track by school and grade <span class="note">Click a cell to filter the student list. Teal = 75%+ on track</span></div>${grid}
-    <div class="ws-title">Students <span class="note">${fmt(sl.length)} students, largest credit gap first${sl.length>500?'. The prototype shows the first 500':''}</span></div>${tbl}`;
+  return top+`<div class="ws-title">Off track by school and grade <span class="note">Count and % of each grade. Click a cell to filter the student list</span></div>${grid}
+    <div class="ws-title">Off-track students <span class="note">Only students behind on credits appear. Credits short shaded 0.25–1, 1.25–3, 3+. ${fmt(sl.length)} students, most credits short first${sl.length>500?'. The prototype shows the first 500':''}</span></div>${tbl}`;
 }
 function paneOnTrack(){
-  return globalCards()+'<hr>'+selCard('On-track status','ot.status',['(All)','On track','Back on track','Off track'],S.ot.status)+
-    `<p class="pnote">Grade 9 has no credit expectation until Q1 grades post, so it is left out. Expected credits shown here are placeholders until the real CreditRequirementByQuarter2027 values are joined in.</p>`;
+  return globalCards()+'<hr>'+selCard('Credits short','ot.status',['(All)','0.25–1.00','1.25–3.00','More than 3.00'],S.ot.status)+
+    `<p class="pnote">Off track = total credits earned is below the expected total for the student's grade and the current quarter (CreditRequirementByQuarter2027). Grade 9 is left out until Q1 grades post. Students who are on track never appear here.</p>`;
+}
+
+/* ============================ Student one-pager ============================ */
+function spList(){return students().filter(s=>S.sp.onlyF==='No'||s.fs.length).sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id))}
+function curStudent(){
+  const list=spList();let s=list.find(x=>x.id===S.sp.stu);
+  if(!s){s=list.find(x=>x.grade>='11'&&x.fs.length>=3&&x.fs.length<=6&&x.fs.some(f=>f.group==='Not scheduled')&&x.fs.some(f=>f.group==='Recovered')&&x.fs.some(f=>f.group==='In progress'))||list[0];S.sp.stu=s?s.id:null}
+  return s;
+}
+function recoveryCell(r){
+  const tabNote=f=>`<span class="mut" style="margin-left:6px">CR tab: ${f.tab}</span>`;
+  if(r.rec)return `<span class="mut">Recovery for the ${yl(r.rec.fYear)} F</span>`;
+  if(r.elective)return r.qs.includes('F')?'<span class="mut">Elective (not tracked)</span>':'';
+  const f=r.f;if(!f)return '';
+  const sq=g=>`<span class="sq" style="background:${GCOLOR[g]}"></span>`;
+  switch(f.k){
+    case 'recOCR':return sq('Recovered')+`Recovered: OCR ${yl(f.recYear)}`+tabNote(f);
+    case 'summer':return sq('Recovered')+`Recovered: Summer ${f.fYear}`+tabNote(f);
+    case 'retake':return sq('Recovered')+`Recovered: Retake ${yl(f.recYear)}`+tabNote(f);
+    case 'same':return sq('Recovered')+'Recovered: credit completed the same year'+tabNote(f);
+    case 'transfer':return sq('Recovered')+'Recovered: transfer credit (verify)'+tabNote(f);
+    case 'ipOCR':return sq('In progress')+'In progress: OCR in the CreditRec period'+tabNote(f);
+    case 'ipRetake':return sq('In progress')+'In progress: Retake 2026-27'+tabNote(f);
+  }
+  return null; /* red box handled by caller */
+}
+function reqCheck(s,bk){
+  const prog=s.prog,req=PROGRAMS[prog].req[bk];
+  const inB=r=>bucketOf(prog,r.type)===bk;
+  const done=s.tx.filter(inB).reduce((t,r)=>t+r.earned,0);
+  const sch=s.sched.filter(inB).reduce((t,r)=>t+r.schedCr,0);
+  const proj=done+sch,left=Math.max(0,req-proj);
+  const hasPace=prog!==64&&PACE_COLS.includes(bk);
+  const nowExp=hasPace?Math.min(req,paceVal(s,bk,CUR_Q)):null;
+  const juneExp=hasPace?Math.min(req,paceVal(s,bk,'4')):null;
+  let st,cls;
+  if(proj>=req-1e-9){st='Met by the end of this year';cls='ok'}
+  else if(s.grade==='12'){st=`Short ${fmtC(left)}: schedule more`;cls='bad'}
+  else if(hasPace&&proj<juneExp-1e-9){st=`Behind pace: ${fmtC(juneExp-proj)} short of the June expectation`;cls='warn'}
+  else if(hasPace){st=`On pace (${fmtC(left)} left after this year)`;cls='ok'}
+  else{st=`${fmtC(left)} left after this year`;cls='ok'}
+  const types=REQ_ORDER.filter(t=>bucketOf(prog,t)===bk);
+  return {done,sch,req,proj,left,st,cls,nowExp,juneExp,types,belowNow:hasPace&&done<nowExp-1e-9};
+}
+function rStudent(){
+  const s=curStudent();
+  if(!s)return '<div class="empty">No students match these filters.</div>';
+  const nRec=s.fs.filter(f=>f.group==='Recovered').length,nIp=s.fs.filter(f=>f.group==='In progress').length;
+  const na=s.fs.filter(f=>f.group==='Partial credit'||f.group==='Not scheduled').length;
+  const P=PROGRAMS[s.prog],BK=REQ_ORDER.filter(t=>P.req[t]!==undefined);
+  const checks=Object.fromEntries(BK.map(bk=>[bk,reqCheck(s,bk)]));
+  const gaps=BK.filter(bk=>checks[bk].cls!=='ok').length;
+  const top=bans([
+    ban('Student',`<span style="font-size:20px">${esc(s.name)}</span>`,`${s.id}. Grade ${s.grade}. ${esc(s.sc.short)}`),
+    ban('Counselor',`<span style="font-size:20px">${esc(s.counselor)}</span>`,`Edgenuity Lab: ${s.lab?'Yes':'No'}. OCR in CreditRec: ${s.cr?'Yes':'No'}`),
+    ban('Credits earned',fmtC(s.credNow),s.otElig?`Expected now: ${fmtC(s.expected)} (${s.onTrack?'on track':'off track'})`:'First credits post after Q1'),
+    ban("Required F's",fmt(s.fs.length),`${fmt(nRec)} recovered. ${fmt(nIp)} in progress`),
+    `<div class="ban"><div class="l">Nothing scheduled</div><div class="v" style="color:${na?'var(--red)':'var(--st-rec)'}">${fmt(na)}</div><div class="s">${na?'Red boxes below':'Every F is recovered or in progress'}</div></div>`,
+    `<div class="ban"><div class="l">Requirements to check</div><div class="v" style="color:${gaps?'var(--st-ns)':'var(--st-rec)'}">${fmt(gaps)}</div><div class="s">${gaps?'Behind pace or short after this year':'This schedule keeps every requirement on pace'}</div></div>`
+  ]);
+  const progNote=`<div class="cap" style="margin:0 0 6px">Program (cohort rule): <b>${esc(P.name)}</b>, ${fmtC(Object.values(P.req).reduce((x,y)=>x+y,0))} credits.${
+    s.assigned!==s.prog?` <span class="warn">Assigned in Infinite Campus: ${esc(PROGRAMS[s.assigned].name)}. Flagged for the counselor (audit check C).</span>`:''}${s.prog===64?' Lotus has no quarter pace rows, so requirements are checked against the end of 12th grade.':''}</div>`;
+  const shortT=t=>({'Physical Education':'PE'}[t]||t);
+  const chkBg=c=>c.cls==='bad'?CELL.red:c.cls==='warn'?CELL.lorange:CELL.lteal;
+  const summary=progNote+`<div class="scroll"><table class="tbl"><thead><tr><th>Graduation requirement</th><th>Credit types counted</th><th class="num">Required</th><th class="num">Earned</th><th class="num">Expected now</th><th class="num">Scheduled 2026-27</th><th class="num">Projected (earned + scheduled)</th><th class="num">Expected by June</th><th>Schedule check</th></tr></thead><tbody>${
+    BK.map(bk=>{const c=checks[bk];return `<tr><td>${esc(bk)}</td><td style="white-space:normal">${esc(c.types.map(shortT).join(', '))}</td>${mk(fmtC(c.req))}
+      ${mk(fmtC(c.done),c.belowNow?CELL.lorange:'',{tip:c.belowNow?tip([['Below the start-of-year expectation',`${fmtC(c.done)} earned, ${fmtC(c.nowExp)} expected`]]):''})}
+      ${mk(c.nowExp===null?'':fmtC(c.nowExp))}${mk(fmtC(c.sch))}${mk(fmtC(c.proj))}${mk(c.juneExp===null?'':fmtC(c.juneExp))}${mk(esc(c.st),chkBg(c),{text:1})}</tr>`}).join('')}
+    <tr class="total"><td>Grand total</td><td></td>${mk(fmtC(BK.reduce((t,bk)=>t+checks[bk].req,0)))}${mk(fmtC(BK.reduce((t,bk)=>t+checks[bk].done,0)))}${mk(s.prog===64?'':fmtC(paceVal(s,'Total',CUR_Q)))}${mk(fmtC(BK.reduce((t,bk)=>t+checks[bk].sch,0)))}${mk(fmtC(BK.reduce((t,bk)=>t+checks[bk].proj,0)))}${mk(s.prog===64?'':fmtC(paceVal(s,'Total','4')))}<td></td></tr></tbody></table></div>`;
+  const body=BK.map(bk=>{
+    const inB=r=>bucketOf(s.prog,r.type)===bk;
+    const rs=[...s.tx.filter(inB),...s.sched.filter(inB)];if(!rs.length)return '';
+    const c=checks[bk];
+    const rowsH=rs.map((r,i)=>{
+      let note,nbg='';
+      if(r.sched){
+        if(r.rec){note=`In progress: recovering the ${yl(r.rec.fYear)} F${r.period?' (CreditRec period)':''}`;nbg=CELL.pteal}
+        else if(r.ubr){note=`Failing Q1 now (${r.ubr.letter}, ${r.ubr.pctScore}%). UBR eligible`;nbg=CELL.lred}
+        else{note='Scheduled';nbg=CELL.lav}
+      } else if(r.rec){note=`Recovery for the ${yl(r.rec.fYear)} F`}
+      else if(r.f){
+        const f=r.f,tabTxt=` CR tab: ${f.tab}.`;
+        const map={recOCR:`Recovered: OCR ${yl(f.recYear)}`,summer:`Recovered: Summer ${f.fYear}`,retake:`Recovered: Retake ${yl(f.recYear)}`,same:'Recovered: credit completed the same year',transfer:'Recovered: transfer credit (verify)',ipOCR:'In progress: OCR in the CreditRec period',ipRetake:'In progress: Retake 2026-27'};
+        if(map[f.k]){note=map[f.k]+'.'+tabTxt;nbg=f.group==='Recovered'?CELL.lteal:CELL.pteal}
+        else{note=(f.k==='partial'?`Partial: ${fmtC(f.earned-f.orig)} of ${fmtC(f.needed-f.orig)} credit recovered (${yl(f.partYear)}). Nothing scheduled for the rest.`:'Nothing scheduled or planned.')+tabTxt;nbg=CELL.red}
+      } else if(r.elective&&r.qs.includes('F'))note='Elective (not tracked)';
+      else note='';
+      const qbg=q=>(q==='F'||q==='U')?CELL.lred:(r.sched&&q?CELL.lav:'');
+      const rh=i===0?`<td class="rh" rowspan="${rs.length+1}">${esc(bk)}</td>`:'';
+      return `<tr>${rh}<td>${esc(r.sched?'2026-27 (scheduled)':r.ylab)}</td><td>${esc(r.code)}</td><td>${r.rec?'↳ ':''}${esc(r.name)}</td><td>${esc(shortT(r.type))}</td>
+        ${r.qs.map(q=>mk(q||'',qbg(q),{text:1})).join('')}${mk(esc(r.other||''),r.sched?CELL.lav:'',{text:1})}${mk(r.sched?'':fmtC(r.earned),r.sched?CELL.lav:'')}${mk(r.sched?fmtC(r.schedCr):'',r.sched?CELL.lav:'')}${mk(esc(note),nbg,{text:1,wrap:260})}</tr>`}).join('');
+    return rowsH+`<tr class="sub"><td colspan="4">Total</td><td></td><td></td><td></td><td></td><td></td>${mk(fmtC(c.done))}${mk(fmtC(c.sch))}<td></td></tr>`;
+  }).join('');
+  return top+`<div class="ws-title">Graduation requirements <span class="note">Expected now = start-of-year pace (Before Q1). Orange = behind pace, red = senior requirement left short</span></div>${summary}
+    <div class="ws-title">Courses by graduation requirement <span class="note">Completed and scheduled courses. Q1–Q4 come from the transcript's grading-task code; semester, final, summer and transfer grades go in their own column. ↳ = recovery course. Shading: light red = F, lavender = scheduled this year (Q1 shows the in-progress grade), teal = recovered or in progress, red = nothing scheduled. Synthetic data</span></div>
+    <div class="scroll" style="max-height:520px"><table class="tbl pager"><thead><tr><th>Requirement</th><th>Year</th><th>Course #</th><th>Course</th><th>Credit type</th><th class="qc">Q1</th><th class="qc">Q2</th><th class="qc">Q3</th><th class="qc">Q4</th><th>Semester / Final / Other</th><th class="num">Credits earned</th><th class="num">Credits scheduled</th><th>F recovery / notes</th></tr></thead><tbody>${body}</tbody></table></div>`;
+}
+function paneStudent(){
+  const list=spList();const cur=S.sp.stu;
+  return globalCards()+'<hr>'+radioCard("Only students with a required F",'sp.onlyF',['Yes','No'],S.sp.onlyF)+
+    `<div class="fcard"><label class="ftitle" for="f-sp-stu">Student</label><select id="f-sp-stu" data-f="sp.stu">${list.map(s=>`<option value="${s.id}"${s.id===cur?' selected':''}>${esc(s.name)} (${s.id})</option>`).join('')}</select></div>`+
+    `<p class="pnote">${fmt(list.length)} students in this list. Counselors usually arrive here from a row on the Student F List, Audit Exceptions or Graduation Off-Track.</p>`+
+    `<div class="fcard legend"><div class="ftitle">Cell color</div>${[['F (completed or now)',CELL.lred],['Scheduled this year',CELL.lav],['Recovered',CELL.lteal],['In progress',CELL.pteal],['Nothing scheduled / senior short',CELL.red],['Behind pace',CELL.lorange]].map(([l,c])=>`<div class="row"><span class="sq" style="background:${c}"></span>${l}</div>`).join('')}</div>`+
+    `<p class="pnote">Requirements: the cohort program (Class of 2027, VPHS Class of 2027, Class of 2028 & Beyond, Lotus). Courses fill requirements by their Infinite Campus credit type; types a program doesn't list (Fine Arts, PE, Health, Computer Tech) count as Elective. Pace: CreditRequirementByQuarter2027 with two grade 12 fixes.</p>`;
 }
 
 /* ============================ Info panels (show/hide container) ============================ */
@@ -685,14 +965,16 @@ const INFO={
    `<h2>Tableau build</h2><ul><li>Text table at student × course-family grain (from the student-F table in SQL).</li><li>Status color: shape or square marks on Status, or a colored Status column.</li><li>Next step: a CASE calc on Status group, CR tab and HasOCR.</li><li>Tooltip carries F year/quarter detail and CR tab entry year.</li></ul>`],
  ubr:[`<h2>About this view</h2><p>Today's failing grades (F or U) in UBR-eligible courses, so teachers and counselors can issue UBRs before the quarter's grades post. Uses the grades-dashboard rule: posted score, else the in-progress score.</p><ul><li>Submissions and completions arrive in phase 2 (Edgenuity or form data).</li><li>AP and ELD stay included until the CR team decides.</li></ul>`,
    `<h2>Tableau build</h2><ul><li>Include AP / Include ELD: string parameters, each with a calc filter (<code>[Include AP]="Include" OR NOT [IsAP]</code>).</li><li>Teacher card: Only Relevant Values.</li><li>Phase 2 columns: placeholder calcs until the Edgenuity feed exists.</li></ul>`],
- audit:[`<h2>About this view</h2><p>Where the CR tab and the transcript or schedule disagree. The transcript is the source of truth.</p><ul><li>Checks 1–6, A and B belong to the CR coordinator; check 7 (required F never entered on the CR tab) belongs to the counselor.</li><li>Click a cell to see its items below; click again to clear.</li></ul>`,
+ audit:[`<h2>About this view</h2><p>Where the CR tab and the transcript or schedule disagree. The transcript is the source of truth.</p><ul><li>Checks 1–6, A and B belong to the CR coordinator; check 7 (required F never entered on the CR tab) and check C (graduation program doesn't match the student's cohort) belong to the counselor.</li><li>Click a cell to see its items below; click again to clear.</li></ul>`,
    `<h2>Tableau build</h2><ul><li>Matrix: highlight table, School × Check, COUNT on Color, per-check color range.</li><li>Cell click: Select filter action on the same dashboard (Single-select only unchecked, Show all values on clear).</li><li>Detail: long table at one row per exception (Check, Detail text built in SQL).</li></ul>`],
- ontrack:[`<h2>About this view</h2><p>Credits earned against the expected credits for each grade and quarter. "Started off track" compares transcript credits as of the first day of school; no snapshot needed.</p><ul><li>Back on track = started off track, now meets the expectation (mostly OCR completions this year).</li><li>Expected credits are placeholders until <code>CreditRequirementByQuarter2027</code> is joined.</li></ul>`,
-   `<h2>Tableau build</h2><ul><li>Grid: bar chart with Grade on Columns, School on Rows, on-track % (SUM/SUM) on Columns, color by threshold.</li><li>Click: Select filter action to the student list.</li><li>Gap = Credits earned − Credits expected, sorted ascending.</li></ul>`]
+ student:[`<h2>About this view</h2><p>One student's completed and currently scheduled courses, grouped by the graduation requirement each one fills. The requirement table at the top adds earned and scheduled credits, so a counselor can see whether this year's schedule keeps each requirement on pace. Red boxes are F's with nothing scheduled, or a senior requirement the schedule leaves short.</p><ul><li>Recovery courses (OCR, summer, retake, transfer) appear as their own indented rows in the year they were taken.</li><li><b>Access:</b> this page shows a whole transcript. Limit it to staff with a legitimate educational interest, ideally with a user filter so counselors see only their caseload.</li></ul>`,
+   `<h2>Tableau build</h2><ul><li>Requirement table: credits earned (TranscriptCredit.standardID) + credits scheduled (active-trial roster × GradingTaskCredit.standardID) vs the cohort program's CreditRequirement rows; pace from CreditRequirementByQuarter2027.</li><li>Course sheet: Requirement, Year, Course # and Course on Rows; Quarter on Columns; ATTR(Score) on Text. Credits earned and F recovery as additional text columns.</li><li>Both tables are highlight tables built from long-format SQL output (one row per cell), so each cell can get its own background from one Cell Color calc. Label color is one fixed color for the whole sheet.</li><li>Q1–Q4 = TranscriptCourse.gradingTaskCode. S1/S2, Final, SS and blank codes (transfer credit, labeled with TranscriptCourse.schoolName) are one text cell built in SQL.</li><li>Requirement subtotals: Analysis → Totals → Add all subtotals. Program line: a calc in the worksheet title.</li><li>Reached from Menu actions on the Student F List, Audit and On-Track rows. Users can print it with Download → PDF.</li></ul>`],
+ ontrack:[`<h2>About this view</h2><p>Only students in grades 10–12 who are behind on total credits. On-track students never appear.</p><ul><li><b>Off track</b> = credits earned now is below the expected total for the student's grade and the current quarter.</li><li><b>Credits expected now</b> = the Total column of <code>CreditRequirementByQuarter2027</code>, Before Q1 row (Q1 row once Q1 grades post). Vista PEAK has its own rows; Avenues, Vanguard and Lotus use the district rows.</li><li><b>Off track at start of year</b> compares transcript credits on the first day of school with the same Before Q1 row.</li></ul>`,
+   `<h2>Tableau build</h2><ul><li>Data source filter: [Credits earned now] &lt; [Credits expected now], so on-track students never load.</li><li>Grid: bar chart, Grade on Columns, School on Rows, COUNT and % off track as labels.</li><li>Click: Select filter action to the student list.</li><li>Credits short and Required F's not scheduled: highlight-table cells with a banded Cell Color calc.</li></ul>`]
 };
 
 /* ============================ Render ============================ */
-const VIEWS={district:[rDistrict,()=>globalCards()+'<hr>'+legend()],school:[rSchool,()=>globalCards()+'<hr>'+legend()],flist:[rFList,paneFList],ubr:[rUBR,paneUBR],audit:[rAudit,paneAudit],ontrack:[rOnTrack,paneOnTrack]};
+const VIEWS={district:[rDistrict,()=>globalCards()+'<hr>'+legend()],school:[rSchool,()=>globalCards()+'<hr>'+legend()],flist:[rFList,paneFList],ubr:[rUBR,paneUBR],audit:[rAudit,paneAudit],ontrack:[rOnTrack,paneOnTrack],student:[rStudent,paneStudent]};
 function render(){
   TIPS=[];ACTS=[];MENUS=[];hideTip();hideMenu();
   document.getElementById('tabs').innerHTML=TABS.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${S.tab===k}" ${act(()=>{S.tab=k})}>${esc(l)}</button>`).join('');
@@ -740,7 +1022,6 @@ document.addEventListener('change',e=>{
   if(t.dataset.f){
     setPath(t.dataset.f,t.value);
     if(t.dataset.f==='school'){const sc=schoolByName(S.school);if(sc&&!sc.counselors.includes(S.counselor))S.counselor='(All)';S.au.sid=null;S.ot.sid=null;S.ot.g=null}
-    if(t.dataset.f==='counselor'&&S.counselor!=='(All)'){const sc=SCHOOLS.find(x=>x.counselors.includes(S.counselor));S.school=sc.name}
     if(t.dataset.f==='fl.subject')S.fl.course='(All)';
     render();
   } else if(t.dataset.fc){
